@@ -1,23 +1,22 @@
 // api/analyze.js
-// VERSION FINALE POUR VERCEL
+// VERSION STABLE V1 (Google Gemini)
 
 export const config = {
     api: {
         bodyParser: {
-            sizeLimit: '4mb', // On laisse passer les images
+            sizeLimit: '4mb',
         },
     },
 };
 
 export default async function handler(req, res) {
-    // 1. On vérifie que le site envoie bien des données (POST)
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method Not Allowed' });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-        return res.status(500).json({ error: 'Clé API manquante dans les réglages Vercel' });
+        return res.status(500).json({ error: 'Clé API manquante sur Vercel' });
     }
 
     try {
@@ -27,7 +26,6 @@ export default async function handler(req, res) {
             return res.status(400).json({ error: 'Aucune image reçue' });
         }
 
-        // 2. CONSIGNE POUR L'IA
         const requestBody = {
             contents: [{
                 parts: [
@@ -35,7 +33,6 @@ export default async function handler(req, res) {
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
             }],
-            // On désactive les sécurités pour éviter les blocages sur les partitions
             safetySettings: [
                 { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
                 { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
@@ -44,8 +41,8 @@ export default async function handler(req, res) {
             ]
         };
 
-        // 3. ENVOI À GOOGLE (Modèle confirmé : gemini-1.5-flash)
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        // CORRECTION ICI : On utilise "v1" au lieu de "v1beta"
+        const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
         const response = await fetch(url, {
             method: 'POST',
@@ -55,7 +52,6 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
-        // 4. GESTION DE LA RÉPONSE
         if (data.error) {
             return res.status(500).json({ error: "Erreur Google : " + data.error.message });
         }
