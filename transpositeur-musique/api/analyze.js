@@ -1,46 +1,73 @@
-const https = require('https');
+// api/analyze.js
+// VERSION FINALE POUR VERCEL
 
-exports.handler = async function(event, context) {
-    // On accepte POST pour faire simple avec ton bouton actuel
-    if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method Not Allowed" };
+export const config = {
+    api: {
+        bodyParser: {
+            sizeLimit: '4mb', // On laisse passer les images
+        },
+    },
+};
+
+export default async function handler(req, res) {
+    // 1. On vérifie que le site envoie bien des données (POST)
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method Not Allowed' });
+    }
 
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return { statusCode: 500, body: JSON.stringify({ error: "Clé API manquante" }) };
+    if (!apiKey) {
+        return res.status(500).json({ error: 'Clé API manquante dans les réglages Vercel' });
+    }
 
-    // ON DEMANDE LA LISTE DES MODÈLES (GET /models)
-    const options = {
-        hostname: 'generativelanguage.googleapis.com',
-        path: `/v1beta/models?key=${apiKey}`,
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-    };
+    try {
+        const { image, mimeType } = req.body;
 
-    return new Promise((resolve, reject) => {
-        const req = https.request(options, (res) => {
-            let responseBody = '';
-            res.on('data', (chunk) => { responseBody += chunk; });
-            res.on('end', () => {
-                try {
-                    const data = JSON.parse(responseBody);
-                    
-                    if (data.error) {
-                        resolve({ statusCode: 500, body: JSON.stringify({ error: "Erreur Google: " + data.error.message }) });
-                    } else if (data.models) {
-                        // ON A LA LISTE ! On filtre ceux qui acceptent "generateContent"
-                        const availableModels = data.models
-                            .filter(m => m.supportedGenerationMethods.includes("generateContent"))
-                            .map(m => m.name) // On garde juste le nom (ex: models/gemini-pro)
-                            .join("\n");
-                        
-                        // On renvoie la liste dans une fausse erreur pour l'afficher à l'écran
-                        resolve({ statusCode: 500, body: JSON.stringify({ error: "LISTE DES MODÈLES DISPOS :\n" + availableModels }) });
-                    } else {
-                        resolve({ statusCode: 500, body: JSON.stringify({ error: "Aucun modèle trouvé." }) });
-                    }
-                } catch (e) { resolve({ statusCode: 500, body: JSON.stringify({ error: "Réponse illisible" }) }); }
-            });
+        if (!image) {
+            return res.status(400).json({ error: 'Aucune image reçue' });
+        }
+
+        // 2. CONSIGNE POUR L'IA
+        const requestBody = {
+            contents: [{
+                parts: [
+                    { text: "Analyze this sheet music. Identify the musical notes. Output ONLY the note names in English (C D E...) separated by spaces. Ignore title/clefs. If unsure, guess." },
+                    { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
+                ]
+            }],
+            // On désactive les sécurités pour éviter les blocages sur les partitions
+            safetySettings: [
+                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+            ]
+        };
+
+        // 3. ENVOI À GOOGLE (Modèle confirmé : gemini-1.5-flash)
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
         });
-        req.on('error', (e) => resolve({ statusCode: 500, body: JSON.stringify({ error: "Erreur Co: " + e.message }) }));
-        req.end();
-    });
-};
+
+        const data = await response.json();
+
+        // 4. GESTION DE LA RÉPONSE
+        if (data.error) {
+            return res.status(500).json({ error: "Erreur Google : " + data.error.message });
+        }
+        
+        if (data.candidates && data.candidates[0].content) {
+            const notes = data.candidates[0].content.parts[0].text;
+            return res.status(200).json({ notes: notes });
+        } else {
+            return res.status(500).json({ error: "L'IA n'a pas trouvé de notes." });
+        }
+
+    } catch (error) {
+        return res.status(500).json({ error: 'Erreur Serveur Vercel : ' + error.message });
+    }
+}
