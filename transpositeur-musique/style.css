@@ -1,0 +1,460 @@
+/* Règle universelle : inclure les bordures et le padding dans le calcul de la taille */
+* {
+    box-sizing: border-box;
+}
+
+/* 1. On définit le style général de la page */
+body {
+    background-color: #121212; /* Le fond très sombre (Dark Mode) */
+    color: #e0e0e0;            /* Le texte en gris très clair (pas blanc pur, ça fait mal aux yeux) */
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* Une police moderne */
+    text-align: center;        /* On centre tout le texte */
+    margin: 0;
+    padding-top: 50px;         /* Un peu d'espace en haut */
+}
+
+/* 2. On stylise la zone d'upload (Version Futuriste) */
+.upload-zone {
+    /* On change la bordure : solide (plus de pointillés), plus fine, et bleu électrique */
+    border: 2px solid #00e5ff;
+
+    /* C'est LA ligne magique pour l'effet futuriste : une ombre lumineuse (effet néon) */
+    box-shadow: 0 0 20px rgba(0, 229, 255, 0.5);
+
+    /* Un fond très légèrement bleuté pour se détacher du reste de la page */
+    background-color: rgba(0, 229, 255, 0.05);
+
+    padding: 50px;
+    margin: 40px auto;
+    width: 60%;
+    border-radius: 15px; /* Angles un peu plus arrondis */
+    transition: all 0.3s ease; /* Pour rendre les changements fluides (on verra ça après) */
+
+    /* Ajoute ces lignes pour gérer l'image de fond : */
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+/* Petit bonus : quand on passe la souris sur la zone, elle brille plus fort */
+.upload-zone:hover {
+    box-shadow: 0 0 35px rgba(0, 229, 255, 0.8);
+    border-color: #ffffff; /* La bordure devient blanche */
+}
+
+/* 3. On stylise le bouton (Version Futuriste) */
+button {
+    background-color: transparent; /* Fond transparent */
+    color: #00e5ff;                /* Texte bleu cyan */
+    border: 2px solid #00e5ff;     /* Bordure bleu cyan */
+    padding: 15px 35px;
+    border-radius: 30px;           /* Bouton très arrondi (forme "pilule") */
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;     /* Animation fluide */
+    /* Petit effet néon discret sur le bouton aussi */
+    box-shadow: 0 0 10px rgba(0, 229, 255, 0.3);
+}
+
+/* Effet quand on passe la souris sur le bouton */
+button:hover {
+    background-color: #00e5ff; /* Le fond se remplit en bleu */
+    color: #121212;            /* Le texte devient noir pour le contraste */
+    box-shadow: 0 0 25px rgba(0, 229, 255, 0.8); /* Le néon devient très fort */
+}
+
+/* Le style du menu déroulant */
+select {
+    background-color: #1e1e1e;
+    color: #00e5ff;
+    border: 1px solid #00e5ff;
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 16px;
+    margin-bottom: 20px;
+    outline: none;
+}
+
+label {
+    font-size: 18px;
+    margin-right: 10px;
+}
+/* La classe qui cache l'élément */
+.result-hidden {
+    display: none; /* C'est ça qui rend l'élément invisible */
+}
+
+/* Le style de la boîte de résultat */
+#result-zone {
+    margin-top: 40px;
+    padding: 30px;
+    border: 2px solid #00ff00; /* Bordure verte */
+    background-color: rgba(0, 255, 0, 0.05); /* Fond vert très léger */
+    border-radius: 15px;
+    box-shadow: 0 0 20px rgba(0, 255, 0, 0.4); /* Néon vert */
+    animation: fadeIn 1s ease; /* Une petite animation d'apparition */
+}
+
+/* Le bouton de téléchargement */
+.download-btn {
+    display: inline-block;
+    margin-top: 20px;
+    text-decoration: none; /* Pas de soulignement */
+    color: #121212;
+    background-color: #00ff00;
+    padding: 15px 30px;
+    border-radius: 30px;
+    font-weight: bold;
+    transition: transform 0.2s;
+}
+
+.download-btn:hover {
+    transform: scale(1.05); /* Le bouton grossit un peu au survol */
+    box-shadow: 0 0 15px #00ff00;
+}
+
+/* L'animation d'apparition (Keyframes) */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Style du bouton secondaire (Recommencer) */
+.secondary-btn {
+    background-color: transparent;
+    border: 1px solid #e0e0e0; /* Bordure grise discrète */
+    color: #e0e0e0;
+    margin-top: 15px;
+    font-size: 14px;
+    padding: 10px 20px;
+}
+
+.secondary-btn:hover {
+    background-color: #333; /* Fond gris foncé au survol */
+    border-color: #fff;
+    color: #fff;
+    box-shadow: none; /* Pas de néon pour celui-là */
+}
+/* Style de la zone de texte manuelle */
+.text-mode {
+    width: 60%;
+    margin: 20px auto; /* Centré */
+    text-align: left;
+}
+
+textarea {
+    width: 100%;
+    height: 80px; /* Hauteur de la boîte */
+    background-color: #1e1e1e; /* Fond sombre */
+    color: #00e5ff; /* Texte néon bleu */
+    border: 1px solid #333;
+    border-left: 3px solid #00e5ff; /* Petite touche de style sur le côté gauche */
+    padding: 15px;
+    font-family: monospace; /* Police style "code" ou "machine" */
+    font-size: 16px;
+    resize: vertical; /* Permet à l'utilisateur d'agrandir la boîte vers le bas */
+    outline: none;
+    border-radius: 5px;
+}
+
+textarea::placeholder {
+    color: #555; /* Couleur du texte d'exemple grisée */
+}
+
+textarea:focus {
+    border-color: #00e5ff; /* Tout le cadre s'illumine quand on clique dedans */
+    box-shadow: 0 0 10px rgba(0, 229, 255, 0.2);
+}
+
+/* --- VERSION MOBILE --- */
+/* Ces règles ne s'appliquent que si l'écran fait moins de 768px */
+@media (max-width: 768px) {
+    
+    /* On réduit les marges du haut */
+    body {
+        padding-top: 20px;
+    }
+
+    /* Le titre devient un peu plus petit pour ne pas prendre toute la place */
+    h1 {
+        font-size: 24px;
+        padding: 0 10px; /* Un peu d'espace sur les côtés */
+    }
+
+    /* La zone d'upload prend presque toute la largeur (90%) au lieu de 60% */
+    .upload-zone {
+        width: 90%;
+        padding: 20px; /* Moins d'espace intérieur */
+        margin: 20px auto;
+    }
+
+    /* Les boutons deviennent larges pour être faciles à cliquer avec le pouce */
+    button, .download-btn {
+        width: 80%;       /* Le bouton prend 80% de la largeur */
+        padding: 15px;    /* Zone de clic confortable */
+        font-size: 16px;
+    }
+
+    /* On empile le label et le menu déroulant */
+    .options-container {
+        display: flex;
+        flex-direction: column; /* Vertical au lieu d'horizontal */
+        align-items: center;
+    }
+
+    select {
+        margin-top: 10px;
+        width: 80%; /* Menu déroulant large aussi */
+    }
+    /* Ajoute ça dans le bloc @media existant */
+    .text-mode {
+        width: 90%; /* Comme la zone d'upload */
+    }
+/* --- CORRECTIF PARTITION --- */
+
+/* 1. Le fond de la boîte */
+#paper {
+    background: white !important;
+    color: black !important; /* Réinitialise la couleur de texte héritée */
+}
+
+/* 2. FORCE BRUTE : Tout ce qui est dessiné (notes, clés) devient noir */
+#paper svg path {
+    fill: #000000 !important;
+    opacity: 1 !important;
+    stroke: none !important; /* Enlève les bordures parasites */
+}
+
+/* 3. Exception pour les lignes de la portée (qui sont des traits, pas des formes pleines) */
+#paper svg path[stroke-width] {
+    stroke: #000000 !important;
+    fill: none !important;
+}
+
+/* 4. Le texte (Titre, tempo, etc.) en noir */
+#paper svg text {
+    fill: #000000 !important;
+    opacity: 1 !important;
+}
+
+/* 5. C'est ICI qu'on tue les fantômes (les "tr", les sélections grises, le curseur) */
+.abcjs-cursor, 
+.abcjs-highlight, 
+.abcjs-note-selected,
+.abcjs-click-monitor,
+.abcjs-hint {
+    display: none !important; /* Disparition totale */
+}
+
+/* 6. On s'assure que la partition prend toute la largeur */
+#paper svg {
+    width: 100% !important;
+    height: auto !important;
+}
+/* --- STYLE LECTEUR AUDIO --- */
+.abcjs-inline-audio {
+    background-color: #1e1e1e; /* Fond sombre */
+    border: 1px solid #00e5ff; /* Bordure néon */
+    border-radius: 5px;
+    padding: 10px;
+    color: #e0e0e0;
+    max-width: 600px;
+    margin: 0 auto; /* Centré */
+}
+
+.abcjs-btn {
+    background: #00e5ff !important; /* Boutons bleus */
+    color: black !important;
+    border-radius: 3px;
+    padding: 5px 10px;
+}
+
+.abcjs-btn:hover {
+    background: white !important;
+}
+
+/* On cache le lecteur quand on imprime le PDF */
+@media print {
+    #audio { display: none !important; }
+}
+
+/* --- STYLE POUR L'IMPRESSION (PDF) --- */
+@media print {
+    
+    /* 1. On cache tout ce qui ne sert à rien sur le papier */
+    header, footer, .upload-zone, .text-mode, .options-container, h2 {
+        display: none !important;
+    }
+
+    /* 2. On cache aussi les boutons (on ne veut pas imprimer le bouton "Télécharger") */
+    button, .download-btn, #reset-btn {
+        display: none !important;
+    }
+
+    /* 3. On remet le fond de la page en blanc pur */
+    body {
+        background-color: white !important;
+        color: black !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    /* 4. On configure la zone de résultat pour qu'elle prenne toute la feuille */
+    #result-zone {
+        display: block !important; /* Force l'affichage */
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        border: none !important; /* Pas de bordure verte */
+        box-shadow: none !important; /* Pas de néon */
+        background: white !important;
+    }
+
+    /* 5. On affiche bien les notes en texte */
+    #result-notes {
+        color: black !important;
+        font-size: 18px;
+        margin-bottom: 20px;
+    }
+    
+    /* 6. Le papier (la partition) doit être bien visible */
+    #paper {
+        margin-top: 20px;
+        width: 100% !important;
+    }
+}
+/* =============================================================
+   CORRECTIF ULTIME LECTEUR AUDIO (OFFICIEL + NÉON)
+   ============================================================= */
+
+/* 1. STRUCTURE OBLIGATOIRE (Pour que le JS soit content) */
+.abcjs-inline-audio {
+    height: 45px;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    background-color: #1e1e1e; /* Fond sombre */
+    border: 1px solid #00e5ff; /* Bordure Néon */
+    border-radius: 6px;
+    margin-bottom: 20px;
+    color: #e0e0e0;
+}
+
+/* On cache l'erreur rouge vilaine */
+.abcjs-css-warning {
+    display: none !important;
+}
+
+/* La sélection du morceau (si plusieurs) - on cache si inutile */
+.abcjs-inline-audio .abcjs-midi-selection {
+    display: none;
+}
+
+/* 2. LES BOUTONS (Play / Pause / Loop) */
+.abcjs-btn {
+    width: 32px;
+    height: 32px;
+    margin-right: 8px;
+    background: transparent;
+    border: 1px solid #00e5ff;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 4px;
+    box-sizing: border-box;
+}
+
+.abcjs-btn:hover {
+    background: #00e5ff; /* S'allume au survol */
+}
+
+.abcjs-btn:hover svg path {
+    fill: #000000; /* L'icône devient noire */
+}
+
+.abcjs-btn svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+.abcjs-btn svg path {
+    fill: #00e5ff; /* Icône bleue par défaut */
+}
+
+/* Quand le bouton est activé (ex: Loop activé) */
+.abcjs-btn.abcjs-pushed {
+    background: rgba(0, 229, 255, 0.3);
+    border-color: #fff;
+}
+.abcjs-btn.abcjs-pushed svg path {
+    fill: #fff;
+}
+
+/* 3. LA BARRE DE PROGRESSION */
+.abcjs-midi-progress-background {
+    flex-grow: 1;
+    height: 10px;
+    background: #333;
+    border: 1px solid #555;
+    border-radius: 5px;
+    margin: 0 15px;
+    position: relative;
+    cursor: pointer;
+}
+
+.abcjs-midi-progress-indicator {
+    background: #00e5ff; /* Barre de progression bleue */
+    height: 100%;
+    border-radius: 4px;
+    width: 0px; /* Géré par le JS */
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+/* Le petit curseur qu'on peut attraper */
+.abcjs-midi-progress-thumb {
+    width: 15px;
+    height: 15px;
+    background: #fff;
+    border-radius: 50%;
+    position: absolute;
+    top: -3px; /* Pour centrer verticalement */
+    margin-left: -7px;
+    box-shadow: 0 0 5px #00e5ff;
+    pointer-events: none; /* Laisse le clic passer à travers */
+}
+
+/* 4. L'HORLOGE */
+.abcjs-midi-clock {
+    font-family: monospace;
+    font-size: 14px;
+    color: #00e5ff;
+    margin-left: 5px;
+}
+
+/* 5. LE TEMPO (Optionnel) */
+.abcjs-tempo-wrapper {
+    font-size: 12px;
+    color: #888;
+    margin-left: 10px;
+    display: none; /* On cache le tempo pour simplifier */
+}
+
+/* CORRECTIF RESPONSIVE : Sur mobile, on arrange mieux */
+@media (max-width: 600px) {
+    .abcjs-inline-audio {
+        flex-wrap: wrap;
+        height: auto;
+        padding: 15px;
+    }
+    .abcjs-midi-progress-background {
+        width: 100%;
+        margin: 15px 0;
+        order: 10; /* Passe en dessous */
+    }
+}
+}

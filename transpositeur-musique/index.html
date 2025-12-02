@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transpositeur Musique</title>
+    
+    <link rel="stylesheet" href="style.css">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-audio.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+        // On configure le "travailleur" (le petit ouvrier qui va lire le PDF)
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    </script>
+    <style>
+        /* 1. On cache le message d'erreur rouge de force */
+        .abcjs-css-warning { 
+            display: none !important; 
+        }
+
+        /* 2. On stylise la boîte du lecteur */
+        .abcjs-inline-audio {
+            background-color: #1e1e1e !important;
+            border: 1px solid #00e5ff !important;
+            border-radius: 8px !important;
+            color: #e0e0e0 !important;
+            padding: 8px !important;
+            display: flex !important;
+            align-items: center !important;
+            margin-top: 15px !important;
+        }
+
+        /* 3. On stylise les boutons (Play/Pause) */
+        .abcjs-btn {
+            background: transparent !important;
+            border: 1px solid #00e5ff !important;
+            border-radius: 4px !important;
+            width: 30px !important;
+            height: 30px !important;
+            margin-right: 10px !important;
+            padding: 4px !important;
+        }
+        
+        .abcjs-btn:hover {
+            background: #00e5ff !important;
+        }
+        
+        /* La couleur des icônes dans les boutons */
+        .abcjs-btn svg path {
+            fill: #00e5ff !important;
+        }
+        .abcjs-btn:hover svg path {
+            fill: #000000 !important;
+        }
+
+        /* 4. La barre de progression */
+        .abcjs-midi-progress-background {
+            background: #333 !important;
+            border: 1px solid #555 !important;
+            height: 10px !important;
+            border-radius: 5px !important;
+            flex-grow: 1 !important; /* Prend toute la largeur dispo */
+            margin: 0 10px !important;
+        }
+        
+        .abcjs-midi-progress-indicator {
+            background: #00e5ff !important;
+        }
+
+        /* 5. On cache la sélection de piste inutile */
+        .abcjs-midi-selection { display: none !important; }
+    </style>
+</head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<body>
+
+    <header>
+        <h1>Transposition pour Musiciens</h1>
+        <p>Transposez vos partitions facilement.</p>
+    </header>
+
+    <main>
+        <div class="upload-zone">
+            <p>Déposez votre partition ici</p>
+            <input type="file" id="partition-upload">
+        </div>
+        <div class="text-mode">
+            <p>Écrivez vos notes ici (C, D, E... ou Do, Ré, Mi...)</p>
+            <textarea id="notes-input" placeholder="Exemple : C G Am F"></textarea>
+        </div>
+        <div class="options-container">
+            <label for="transposition">Transposer vers :</label>
+            <select id="transposition">
+                <option value="Eb">Saxophone Alto (Mi bémol)</option>
+                <option value="Bb">Trompette / Clarinette (Si bémol)</option>
+                <option value="F">Cor (Fa)</option>
+                <option value="C">Piano / Flûte (Ut - Pas de changement)</option>
+            </select>
+        </div>
+        <br>
+        <button>Transposer</button>
+        <div id="result-zone" class="result-hidden">
+            <h2>✨ Transposition Terminée !</h2>
+            <p>Votre partition a été convertie pour : <strong id="instrument-display">Instrument</strong></p>
+            <div class="result-box">
+                <p id="result-notes" style="font-size: 20px; color: #00e5ff; font-family: monospace;">...</p>
+           <div id="audio" class="abcjs-large" style="margin-top: 15px;"></div>         
+            <div id="paper" style="background: white; padding: 20px; border-radius: 5px; margin-top: 20px; overflow-x: auto;"></div>
+            </div>
+           <a href="#" id="print-btn" class="download-btn">
+    ⬇️ Télécharger le PDF transposé
+            </a>
+            <button id="reset-btn" class="secondary-btn">🔄 Nouvelle transposition</button>
+        </div>
+    </main>
+
+    <footer>
+        <p>© 2025 - Outil créé pour les musiciens</p>
+    </footer>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
