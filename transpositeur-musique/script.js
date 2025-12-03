@@ -1,22 +1,14 @@
-// SCRIPT.JS - VERSION FINALE (Dashboard & Transposition)
+// SCRIPT.JS - VERSION INSPECTEUR
 
 const fileInput = document.getElementById('partition-upload');
 const uploadZone = document.querySelector('.upload-zone');
 const uploadText = document.querySelector('.upload-zone p');
 const transposeBtn = document.getElementById('transpose-btn');
 const resultZone = document.getElementById('result-zone');
-const dashboard = document.getElementById('dashboard');
+const editorZone = document.getElementById('editor-zone');
+const abcEditor = document.getElementById('abc-editor');
 
-// Champs du Dashboard
-const metaTitle = document.getElementById('meta-title');
-const metaMeter = document.getElementById('meta-meter');
-const metaKey = document.getElementById('meta-key');
-const abcHidden = document.getElementById('abc-hidden');
-
-let originalNotesBody = ""; // Stocke les notes sans les en-têtes
-
-// --- FONCTIONS ---
-
+// --- OUTILS ---
 function getBase64(file) {
     return new Promise((r, j) => {
         const reader = new FileReader();
@@ -30,14 +22,13 @@ async function compressImage(file) {
     const bitmap = await createImageBitmap(file);
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    const scale = Math.min(1024 / bitmap.width, 1); // Max 1024px
+    const scale = Math.min(1024 / bitmap.width, 1);
     canvas.width = bitmap.width * scale;
     canvas.height = bitmap.height * scale;
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.6));
+    return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.7));
 }
 
-// Convertit PDF -> Image
 async function convertPdfToImage(pdfFile) {
     const arrayBuffer = await pdfFile.arrayBuffer();
     const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
@@ -51,46 +42,23 @@ async function convertPdfToImage(pdfFile) {
     return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.7));
 }
 
-// --- PARSING ABC (LE CŒUR DU SYSTÈME) ---
-function parseABC(abcCode) {
-    // 1. Extraire les infos
-    const T = abcCode.match(/^T:(.*)$/m);
-    const M = abcCode.match(/^M:(.*)$/m);
-    const K = abcCode.match(/^K:(.*)$/m);
-    const L = abcCode.match(/^L:(.*)$/m);
-
-    // 2. Remplir le Dashboard
-    metaTitle.value = T ? T[1].trim() : "Partition inconnue";
-    metaMeter.value = M ? M[1].trim() : "4/4";
-    metaKey.value = K ? K[1].trim() : "C";
-
-    // 3. Isoler les notes (tout ce qui n'est pas un header)
-    const lines = abcCode.split('\n');
-    // On garde L: s'il existe pour la référence
-    const unitLength = L ? L[0] : "L:1/4"; 
-    
-    // On filtre pour ne garder que la musique
-    const musicLines = lines.filter(line => !/^[A-Z]:/.test(line));
-    originalNotesBody = unitLength + "\n" + musicLines.join('\n');
-}
-
 // --- CHARGEMENT ---
 fileInput.addEventListener('change', async function() {
     if (!fileInput.files.length) return;
-    const file = fileInput.files[0];
-    let imgFile = file;
-
-    uploadText.innerHTML = `<strong>Analyse IA...</strong><br>Détection Rythme & Tonalité 🎼`;
+    
+    // UI
+    uploadText.innerHTML = `<strong>Analyse IA...</strong><br>Recherche des erreurs 🔎`;
     uploadZone.style.borderColor = "#00e5ff";
 
     try {
+        let file = fileInput.files[0];
         if (file.type === 'application/pdf') {
             const blob = await convertPdfToImage(file);
-            imgFile = new File([blob], "temp.jpg");
+            file = new File([blob], "temp.jpg");
             uploadZone.style.backgroundImage = "none";
             uploadZone.style.backgroundColor = "rgba(0,229,255,0.1)";
         } else {
-            imgFile = await compressImage(file);
+            file = await compressImage(file);
             const reader = new FileReader();
             reader.onload = e => {
                 uploadZone.style.backgroundImage = `url(${e.target.result})`;
@@ -101,7 +69,7 @@ fileInput.addEventListener('change', async function() {
             reader.readAsDataURL(file);
         }
 
-        const base64 = await getBase64(imgFile);
+        const base64 = await getBase64(file);
         const res = await fetch('/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -111,49 +79,40 @@ fileInput.addEventListener('change', async function() {
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
-        // SUCCÈS : On remplit le Dashboard
-        parseABC(data.abc);
+        // SUCCÈS : On affiche le code dans l'éditeur
+        abcEditor.value = data.abc;
         
-        uploadText.innerHTML = `<strong>Terminé !</strong><br>Vérifiez les infos ci-dessous.<br><button onclick="window.location.reload()" style="background:#333;color:white;border:none;padding:5px;margin-top:5px;cursor:pointer">❌ Annuler</button>`;
+        // On affiche la zone d'édition
+        editorZone.style.display = "block";
+        
+        uploadText.innerHTML = `<strong>Terminé !</strong><br>Vérifiez le code ci-dessous.`;
         uploadZone.style.borderColor = "#00ff00";
-        dashboard.style.display = "block";
 
     } catch (e) {
-        uploadText.innerHTML = `Erreur : ${e.message} <br><button onclick="window.location.reload()">Réessayer</button>`;
+        uploadText.innerHTML = `Erreur : ${e.message}`;
         uploadZone.style.borderColor = "red";
     }
 });
 
 // --- TRANSPOSITION ---
 transposeBtn.addEventListener('click', function() {
-    if (!originalNotesBody) { alert("Chargez une partition !"); return; }
+    let abcCode = abcEditor.value; // On prend ce qu'Il y a dans la zone de texte (modifié ou pas)
+    
+    if (!abcCode) { alert("Pas de partition !"); return; }
 
     const keySelect = document.getElementById('transposition');
     const instrumentKey = keySelect.value;
     
-    // Décalage visuel pour l'instrument
     let visualTranspose = 0;
     if (instrumentKey === "Bb") visualTranspose = 2;
     if (instrumentKey === "Eb") visualTranspose = 9;
     if (instrumentKey === "F") visualTranspose = 7;
 
-    // On reconstruit le ABC propre avec les valeurs du Dashboard (au cas où l'utilisateur les a corrigées)
-    const finalABC = `
-X:1
-T:${metaTitle.value}
-M:${metaMeter.value}
-K:${metaKey.value}
-%%staffwidth 800
-${originalNotesBody}
-|]`;
-
-    document.getElementById('final-title').innerText = "Résultat pour : " + keySelect.options[keySelect.selectedIndex].text;
-    resultZone.style.display = "block";
-
     // Rendu
-    const visualObj = ABCJS.renderAbc("paper", finalABC, {
+    const visualObj = ABCJS.renderAbc("paper", abcCode, {
         responsive: "resize",
-        visualTranspose: visualTranspose // La bibliothèque gère tout !
+        visualTranspose: visualTranspose, // Transposition visuelle automatique
+        staffwidth: 800
     });
 
     if (ABCJS.synth.supportsAudio()) {
@@ -163,5 +122,6 @@ ${originalNotesBody}
         createSynth.init({ visualObj: visualObj[0] }).then(() => synth.setTune(visualObj[0], false));
     }
     
+    resultZone.style.display = "block";
     resultZone.scrollIntoView({behavior: "smooth"});
 });
