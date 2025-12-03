@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : EXPERT RYTHME & STRUCTURE
+// VERSION : SCANNER AUTOMATIQUE + EXPERT RYTHME
 
 export const config = {
     api: {
@@ -19,21 +19,51 @@ export default async function handler(req, res) {
         const { image, mimeType } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
+        // --- 1. SCAN DES MODÈLES DISPONIBLES ---
+        // On demande la liste à Google pour ne plus jamais avoir d'erreur "Not Found"
+        const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+        const listResp = await fetch(listUrl);
+        const listData = await listResp.json();
+
+        if (listData.error) {
+            return res.status(500).json({ error: "Impossible de lister les modèles : " + listData.error.message });
+        }
+
+        // --- 2. SÉLECTION INTELLIGENTE ---
+        const allModels = listData.models || [];
+        
+        // On cherche un modèle qui voit les images ("generateContent") et qui n'est pas le 2.0 (quota)
+        const candidates = allModels.filter(m => 
+            m.supportedGenerationMethods.includes("generateContent") && 
+            !m.name.includes("2.0") 
+        );
+
+        // Priorité : Flash > Pro > Vision
+        let chosenModel = candidates.find(m => m.name.includes("flash"));
+        if (!chosenModel) chosenModel = candidates.find(m => m.name.includes("pro"));
+        if (!chosenModel) chosenModel = candidates[0]; // Le premier qui vient
+
+        if (!chosenModel) {
+            return res.status(500).json({ error: "Aucun modèle compatible trouvé pour cette clé." });
+        }
+
+        // On nettoie le nom (ex: "models/gemini-1.5-flash" -> "gemini-1.5-flash")
+        const modelName = chosenModel.name.replace("models/", "");
+
+        // --- 3. CONSIGNE EXPERTE (RYTHME & STRUCTURE) ---
         const requestBody = {
             contents: [{
                 parts: [
                     { text: `
-                        Act as a professional music transcriber. Convert this sheet music to ABC Notation.
+                        Transcribe this sheet music into valid ABC Notation.
                         
-                        CRITICAL RULES FOR RHYTHM:
-                        1. Identify the Time Signature (e.g. M:4/4).
-                        2. You MUST ensure that the sum of note durations in every bar matches the Time Signature exactly. 
-                        3. If you see a half note, write it as '2'. If a dotted quarter, '3/2'. Do not guess. Be mathematically precise.
-                        4. Detect the Key Signature (K:) accurately (count sharps/flats).
-
-                        OUTPUT FORMAT:
-                        Return ONLY the raw ABC code starting with X:1.
-                        Do NOT add explanations or markdown blocks.
+                        RULES:
+                        1. HEADER: You MUST detect 'M:' (Time Signature), 'L:' (Unit Note Length), and 'K:' (Key Signature).
+                        2. RHYTHM: Ensure note durations match the time signature perfectly. If the time is 4/4, the sum of notes in a bar MUST be 4 beats. Use '2' for half notes, '4' for whole notes, etc.
+                        3. PITCH: Transcribe notes accurately with octaves.
+                        
+                        OUTPUT:
+                        Return ONLY the ABC code block starting with X:1. No text before or after.
                     `},
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
@@ -46,9 +76,7 @@ export default async function handler(req, res) {
             ]
         };
 
-        // On utilise le modèle Flash 1.5 (le plus stable pour les quotas actuels)
-        // Si besoin, le code peut basculer sur Pro, mais Flash est meilleur en maths rapides
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
         const response = await fetch(url, {
             method: 'POST',
@@ -58,10 +86,13 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
-        if (data.error) return res.status(500).json({ error: "Erreur Google : " + data.error.message });
+        if (data.error) {
+            return res.status(500).json({ error: `Erreur (${modelName}) : ` + data.error.message });
+        }
         
         if (data.candidates && data.candidates[0].content) {
             let abcCode = data.candidates[0].content.parts[0].text;
+            // Nettoyage
             abcCode = abcCode.replace(/```abc/gi, "").replace(/```/g, "").trim();
             return res.status(200).json({ abc: abcCode });
         } else {
