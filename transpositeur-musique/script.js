@@ -1,5 +1,5 @@
 // =========================================================
-//  SCRIPT.JS - VERSION FINALE (COMPRESSION AUTOMATIQUE)
+//  SCRIPT.JS - VERSION FINALE (RYTHME + UX)
 // =========================================================
 
 const fileInput = document.getElementById('partition-upload');
@@ -14,9 +14,8 @@ const resultNotes = document.getElementById('result-notes');
 const resetBtn = document.getElementById('reset-btn');
 const printBtn = document.getElementById('print-btn');
 
-// --- 1. OUTILS DE TRAITEMENT ---
+// --- 1. OUTILS DIVERS ---
 
-// Convertit un fichier en texte pour l'envoi
 function getBase64(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -26,42 +25,39 @@ function getBase64(file) {
     });
 }
 
-// CRUCIAL : Compresse l'image pour éviter le crash serveur
 async function compressImage(file) {
     const bitmap = await createImageBitmap(file);
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    
-    // On limite la largeur à 1024px (Léger et suffisant pour l'IA)
     const MAX_WIDTH = 1024;
     let width = bitmap.width;
     let height = bitmap.height;
-
     if (width > MAX_WIDTH) {
         height = Math.round(height * (MAX_WIDTH / width));
         width = MAX_WIDTH;
     }
-
     canvas.width = width;
     canvas.height = height;
     ctx.drawImage(bitmap, 0, 0, width, height);
-
-    // Export en JPEG qualité 60%
     return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.6));
 }
 
-// Convertit PDF -> Image
 async function convertPdfToImage(pdfFile) {
     const arrayBuffer = await pdfFile.arrayBuffer();
     const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
     const page = await pdf.getPage(1);
-    const viewport = page.getViewport({ scale: 1.0 }); // Zoom normal
+    const viewport = page.getViewport({ scale: 1.0 });
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     canvas.height = viewport.height;
     canvas.width = viewport.width;
     await page.render({ canvasContext: context, viewport: viewport }).promise;
     return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.7));
+}
+
+// Fonction pour recharger la page (Bouton Annuler)
+function resetPage() {
+    window.location.reload();
 }
 
 // --- 2. GESTION DU CHARGEMENT ---
@@ -71,23 +67,28 @@ fileInput.addEventListener('change', async function() {
         const originalFile = fileInput.files[0];
         let imageToProcess;
 
-        uploadText.innerHTML = `<strong>Optimisation...</strong><br>Traitement de l'image 🖼️`;
+        // UX : Bouton "Changer de fichier" apparait
+        // On remplace le texte par un message + un bouton rouge pour annuler
+        uploadText.innerHTML = `
+            <strong>Traitement en cours...</strong><br>Optimisation de l'image 🖼️<br>
+            <button onclick="window.location.reload()" style="background:red; border:none; color:white; padding:5px 10px; border-radius:5px; margin-top:10px; cursor:pointer; font-size:12px;">❌ Changer de fichier</button>
+        `;
+        
+        // UX : Couleur Bleu (au lieu de rouge)
         uploadZone.style.borderColor = "#00e5ff";
         uploadZone.style.boxShadow = "0 0 20px rgba(0, 229, 255, 0.5)";
 
         try {
-            // A. PRÉPARATION ET COMPRESSION
             if (originalFile.type === 'application/pdf') {
-                uploadText.innerHTML = `Lecture PDF...`;
+                uploadText.innerHTML = `Lecture PDF... <br><button onclick="window.location.reload()" style="background:#333; border:1px solid #555; color:white; padding:5px; border-radius:5px; margin-top:5px; cursor:pointer;">❌ Annuler</button>`;
                 const pdfBlob = await convertPdfToImage(originalFile);
-                // On compresse le résultat du PDF
                 imageToProcess = await compressImage(new File([pdfBlob], "temp.jpg"));
                 
+                // UX : Fond BLEU TRANSPARENT (au lieu de rouge)
                 uploadZone.style.backgroundImage = "none";
-                uploadZone.style.backgroundColor = "rgba(255, 0, 0, 0.1)";
+                uploadZone.style.backgroundColor = "rgba(0, 229, 255, 0.1)"; 
 
             } else if (originalFile.type.startsWith('image/')) {
-                // Affichage
                 const reader = new FileReader();
                 reader.onload = e => {
                     uploadZone.style.backgroundImage = `url(${e.target.result})`;
@@ -95,38 +96,34 @@ fileInput.addEventListener('change', async function() {
                     uploadZone.style.backgroundPosition = "center";
                 };
                 reader.readAsDataURL(originalFile);
-
-                // Compression
                 imageToProcess = await compressImage(originalFile);
             } else {
-                alert("Format non supporté. Utilisez JPG, PNG ou PDF.");
-                return;
+                alert("Format non supporté."); return;
             }
 
-            // B. ENVOI À L'IA
-            uploadText.innerHTML = `<strong>L'IA analyse...</strong><br>Envoi au serveur 🚀`;
+            // ENVOI IA
+            uploadText.innerHTML = `<strong>L'IA analyse le rythme...</strong><br>Envoi au serveur 🚀`;
             
             const base64 = await getBase64(imageToProcess);
-
             const response = await fetch('/api/analyze', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ image: base64, mimeType: 'image/jpeg' })
             });
 
-            // Lecture sécurisée de la réponse
             const textResponse = await response.text();
-
             if (!response.ok) throw new Error(`Erreur ${response.status}: ${textResponse}`);
-
+            
             let result;
-            try { result = JSON.parse(textResponse); } 
-            catch (e) { throw new Error("Réponse serveur illisible (Crash possible)"); }
+            try { result = JSON.parse(textResponse); } catch (e) { throw new Error("Réponse serveur illisible"); }
 
             if (result.notes) {
-                notesInput.value = result.notes.trim();
-                uploadText.innerHTML = `<strong>Succès !</strong><br>Notes trouvées.`;
+                // On nettoie un peu le résultat (enlève les retours à la ligne)
+                notesInput.value = result.notes.replace(/\n/g, " ").trim();
+                
+                uploadText.innerHTML = `<strong>Succès !</strong><br>Partition détectée.<br><button onclick="window.location.reload()" style="background:#333; border:1px solid #555; color:white; padding:5px; border-radius:5px; margin-top:5px; cursor:pointer; font-size:12px;">❌ Changer de fichier</button>`;
                 uploadZone.style.borderColor = "#00ff00";
+                
                 notesInput.style.backgroundColor = "#333";
                 setTimeout(() => notesInput.style.backgroundColor = "#1e1e1e", 500);
             } else {
@@ -135,7 +132,7 @@ fileInput.addEventListener('change', async function() {
 
         } catch (error) {
             console.error(error);
-            uploadText.innerHTML = `<strong>Échec</strong><br>Réessayez.`;
+            uploadText.innerHTML = `<strong>Échec</strong><br><button onclick="window.location.reload()">Réessayer</button>`;
             uploadZone.style.borderColor = "red";
             alert("⚠️ " + error.message);
         }
@@ -143,34 +140,69 @@ fileInput.addEventListener('change', async function() {
 });
 
 
-// --- 3. LOGIQUE MUSICALE (Reste inchangé) ---
-const scale = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const englishToFrenchDict = { "C": "Do", "C#": "Do#", "D": "Ré", "D#": "Ré#", "E": "Mi", "F": "Fa", "F#": "Fa#", "G": "Sol", "G#": "Sol#", "A": "La", "A#": "La#", "B": "Si" };
+// --- 3. NOUVEAU MOTEUR DE TRANSPOSITION (COMPATIBLE ABC/RYTHME) ---
 
-function translateToEnglish(text) {
-    return text.replace(/Do#/gi, "C#").replace(/Do/gi, "C").replace(/Ré#/gi, "D#").replace(/Re#/gi, "D#").replace(/Ré/gi, "D").replace(/Re/gi, "D").replace(/Mi/gi, "E").replace(/Fa#/gi, "F#").replace(/Fa/gi, "F").replace(/Sol#/gi, "G#").replace(/Sol/gi, "G").replace(/La#/gi, "A#").replace(/La/gi, "A").replace(/Si/gi, "B");
+// Les 12 demi-tons
+const semiTones = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+// Fonction pour transposer un "Token" ABC (ex: "^C'2" ou "_E/2")
+function transposeABCToken(token, shift) {
+    // Regex magique qui découpe : (Accidentel)(Note)(Octave/Durée)
+    // 1: ^=_ (Optionnel)
+    // 2: A-G or a-g (La note)
+    // 3: Tout le reste (',2/ etc)
+    const match = token.match(/^([_\^=]?)([a-gA-G])(.*)$/);
+    
+    if (!match) return token; // Si ce n'est pas une note (ex: barre de mesure |), on renvoie tel quel
+    
+    let accidental = match[1]; // ^, _, = ou vide
+    let noteChar = match[2];   // C ou c
+    let suffix = match[3];     // '2 etc.
+
+    // On normalise la note en Majuscule pour chercher dans notre tableau
+    let noteUpper = noteChar.toUpperCase();
+    
+    // On trouve l'index de base (C=0, D=2, E=4...)
+    let baseIndex = semiTones.indexOf(noteUpper);
+    
+    // On ajuste selon l'accidentel ABC
+    if (accidental === "^") baseIndex += 1;
+    if (accidental === "_") baseIndex -= 1;
+    
+    // On calcule le nouvel index
+    let newIndex = baseIndex + shift;
+    
+    // On gère les octaves (si on dépasse 12, on doit peut-être ajouter une apostrophe ' ou virgule ,)
+    // Pour simplifier ici, on fait juste le modulo 12
+    while (newIndex < 0) newIndex += 12;
+    while (newIndex >= 12) newIndex -= 12;
+    
+    // On récupère la nouvelle note (ex: F#)
+    let newNoteRaw = semiTones[newIndex];
+    
+    // On convertit le format "F#" en format ABC "^F"
+    let newAccidental = "";
+    let newNoteLetter = newNoteRaw.charAt(0);
+    
+    if (newNoteRaw.length > 1 && newNoteRaw[1] === "#") {
+        newAccidental = "^";
+    }
+    
+    // On remet la casse (Minuscule si c'était minuscule)
+    if (noteChar === noteChar.toLowerCase()) {
+        newNoteLetter = newNoteLetter.toLowerCase();
+    }
+    
+    return newAccidental + newNoteLetter + suffix;
 }
 
-function transposeNote(note, semitones) {
-    let index = scale.indexOf(note.toUpperCase());
-    if (index === -1) return note;
-    let newIndex = index + semitones;
-    if (newIndex >= 12) newIndex = newIndex - 12;
-    if (newIndex < 0) newIndex = newIndex + 12;
-    return scale[newIndex];
-}
 
-function convertToAbcFormat(notesArray) {
-    return notesArray.map(note => {
-        if (note.length > 1 && note[1] === "#") return "^" + note[0];
-        return note;
-    }).join(" ");
-}
-
-function drawSheetMusic(notesArray) {
-    const abcNotes = convertToAbcFormat(notesArray);
-    const abcString = `X:1\nT:Partition Transposee\nM:4/4\nL:1/4\nQ:120\nK:C\n%%staffwidth 1000\n%%stretchlast 1\n${abcNotes}|]`;
-    const visualObj = ABCJS.renderAbc("paper", abcString, { responsive: "resize", clickListener: null });
+function drawSheetMusic(abcString) {
+    // On s'assure que le header ABC est propre
+    const finalAbc = `X:1\nT:Partition Transposee\nM:4/4\nL:1/4\nQ:120\nK:C\n%%staffwidth 1000\n%%stretchlast 1\n${abcString}|]`;
+    
+    const visualObj = ABCJS.renderAbc("paper", finalAbc, { responsive: "resize", clickListener: null });
+    
     if (ABCJS.synth.supportsAudio()) {
         const synthControl = new ABCJS.synth.SynthController();
         synthControl.load("#audio", null, { displayLoop: true, displayRestart: true, displayPlay: true, displayProgress: true, displayWarp: true });
@@ -180,8 +212,9 @@ function drawSheetMusic(notesArray) {
 }
 
 transposeBtn.addEventListener('click', function() {
-    const instrumentName = selectInstrument.options[selectInstrument.selectedIndex].text;
     const instrumentKey = selectInstrument.value;
+    const instrumentName = selectInstrument.options[selectInstrument.selectedIndex].text;
+    
     let shift = 0;
     if (instrumentKey === "Bb") shift = 2; else if (instrumentKey === "Eb") shift = 9; else if (instrumentKey === "F") shift = 7;
     
@@ -194,28 +227,22 @@ transposeBtn.addEventListener('click', function() {
         transposeBtn.style.opacity = "1";
         try {
             let text = notesInput.value;
-            if (!text || text.trim() === "") { alert("Aucune note à transposer !"); return; }
+            if (!text || text.trim() === "") { alert("Aucune note !"); return; }
             
-            const isFrench = /Do|Re|Ré|Mi|Fa|Sol|La|Si/i.test(text);
-            let englishText = translateToEnglish(text);
-            let words = englishText.trim().split(/\s+/);
-            let rawTransposedNotes = [];
+            // On sépare par espaces
+            let tokens = text.trim().split(/\s+/);
             
-            let newNotesArray = words.map(word => {
-                if (!word) return "";
-                let notePart = "", suffix = "";
-                if (word.length > 1 && word[1] === "#") { notePart = word.substring(0, 2); suffix = word.substring(2); } 
-                else { notePart = word.substring(0, 1); suffix = word.substring(1); }
-                let transposedNote = transposeNote(notePart, shift);
-                rawTransposedNotes.push(transposedNote);
-                let displayNote = transposedNote;
-                if (isFrench && englishToFrenchDict[transposedNote]) displayNote = englishToFrenchDict[transposedNote];
-                return displayNote + suffix;
-            });
+            // On transpose chaque token en gardant le rythme
+            let transposedTokens = tokens.map(token => transposeABCToken(token, shift));
+            
+            let resultString = transposedTokens.join(" ");
 
             instrumentDisplay.innerText = instrumentName;
-            resultNotes.innerText = newNotesArray.join("  ");
-            drawSheetMusic(rawTransposedNotes);
+            // On affiche le code ABC transposé dans la zone texte
+            resultNotes.innerText = resultString;
+            
+            drawSheetMusic(resultString);
+            
             resultZone.style.display = "block";
             resultZone.scrollIntoView({behavior: "smooth"});
         } catch (e) { alert("Erreur : " + e.message); }
