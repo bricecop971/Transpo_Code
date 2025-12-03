@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION AUTO-PILOTE (Détection automatique du modèle valide)
+// VERSION : RYTHME & ABC
 
 export const config = {
     api: {
@@ -23,56 +23,11 @@ export default async function handler(req, res) {
         const { image, mimeType } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        // --- ÉTAPE 1 : ON RÉCUPÈRE LA LISTE OFFICIELLE DES MODÈLES ---
-        const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
-        const listResp = await fetch(listUrl);
-        const listData = await listResp.json();
-
-        if (listData.error) {
-            return res.status(500).json({ error: "Impossible de lister les modèles : " + listData.error.message });
-        }
-
-        // --- ÉTAPE 2 : ON CHOISIT LE BON MODÈLE DANS LA LISTE ---
-        // On cherche un modèle qui :
-        // 1. Supporte "generateContent" (pour analyser)
-        // 2. Contient "flash" (pour la vitesse et le quota gratuit)
-        // 3. N'est PAS le "2.0" (car ton quota est épuisé dessus)
-        
-        const models = listData.models || [];
-        
-        // On cherche le meilleur candidat
-        let chosenModel = models.find(m => 
-            m.supportedGenerationMethods.includes("generateContent") && 
-            m.name.includes("flash") && 
-            !m.name.includes("2.0") // On évite celui qui est bloqué
-        );
-
-        // Si on ne trouve pas de Flash 1.5, on cherche un "Pro" (1.5 ou 1.0)
-        if (!chosenModel) {
-            chosenModel = models.find(m => 
-                m.supportedGenerationMethods.includes("generateContent") && 
-                m.name.includes("pro") &&
-                !m.name.includes("2.0")
-            );
-        }
-
-        if (!chosenModel) {
-             // Secours ultime : on prend le premier qui marche
-             chosenModel = models.find(m => m.supportedGenerationMethods.includes("generateContent"));
-        }
-
-        if (!chosenModel) {
-            return res.status(500).json({ error: "Aucun modèle IA disponible pour cette clé." });
-        }
-
-        // On nettoie le nom (ex: "models/gemini-1.5-flash-001" -> "gemini-1.5-flash-001")
-        const modelName = chosenModel.name.replace("models/", "");
-
-        // --- ÉTAPE 3 : ANALYSE ---
         const requestBody = {
             contents: [{
                 parts: [
-                    { text: "Analyze this sheet music. Output ONLY the note names in English (C D E...) separated by spaces. Ignore title/clefs. If unsure, guess." },
+                    // NOUVELLE CONSIGNE : On demande du format ABC strict avec le rythme
+                    { text: "Analyze this sheet music. Transcribe it into ABC Notation. Include the note durations (rhythm) and accidentals (^ for sharp, _ for flat). Do not include headers (X:, T:, etc). Just the note sequence. Example: C2 D/2 ^F G" },
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
             }],
@@ -84,7 +39,8 @@ export default async function handler(req, res) {
             ]
         };
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+        // On utilise le modèle Flash (gratuit et rapide)
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
         const response = await fetch(url, {
             method: 'POST',
@@ -95,7 +51,7 @@ export default async function handler(req, res) {
         const data = await response.json();
 
         if (data.error) {
-            return res.status(500).json({ error: `Erreur (${modelName}) : ` + data.error.message });
+            return res.status(500).json({ error: "Erreur Google : " + data.error.message });
         }
         
         if (data.candidates && data.candidates[0].content) {
