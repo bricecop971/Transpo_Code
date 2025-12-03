@@ -7,15 +7,50 @@
     <link rel="stylesheet" href="style.css">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-audio.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
+
+    <style>
+        /* On cache l'erreur rouge */
+        .abcjs-css-warning { display: none !important; }
+
+        /* Style du lecteur */
+        .abcjs-inline-audio {
+            background: #222;
+            border: 1px solid #00e5ff;
+            border-radius: 8px;
+            padding: 5px;
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .abcjs-btn {
+            background: transparent;
+            border: 1px solid #00e5ff;
+            border-radius: 4px;
+            margin: 0 4px;
+            padding: 2px 6px;
+            color: #00e5ff;
+            cursor: pointer;
+        }
+        .abcjs-btn:hover { background: #00e5ff; color: #000; }
+        .abcjs-btn svg path { fill: currentColor; }
+        .abcjs-midi-progress-background { background: #444; height: 8px; border-radius: 4px; margin: 0 10px; flex-grow: 1; border: 1px solid #666; }
+        .abcjs-midi-progress-indicator { background: #00e5ff; height: 100%; border-radius: 4px; }
+        .abcjs-midi-clock { color: #aaa; font-family: monospace; font-size: 12px; margin-left: 5px; }
+        
+        /* Dashboard style */
+        .dash-card { background: #222; padding: 10px; border-radius: 8px; border: 1px solid #444; }
+        .dash-card label { display: block; font-size: 11px; color: #888; margin-bottom: 5px; text-transform: uppercase; }
+        .dash-card input { width: 100%; background: transparent; border: none; color: #00e5ff; font-weight: bold; font-size: 16px; outline: none; }
+    </style>
 </head>
 <body>
 
     <header>
         <h1>🎼 Transpositeur IA</h1>
-        <p>Analyse rythmique et harmonique automatique</p>
+        <p>Analyse rythmique et harmonique</p>
     </header>
 
     <main>
@@ -31,15 +66,18 @@
                     <input type="text" id="meta-title" placeholder="Inconnu">
                 </div>
                 <div class="dash-card">
-                    <label>MESURE (RYTHME)</label>
+                    <label>MESURE (M:)</label>
                     <input type="text" id="meta-meter" placeholder="ex: 4/4">
                 </div>
                 <div class="dash-card">
-                    <label>TONALITÉ</label>
-                    <input type="text" id="meta-key" placeholder="ex: C (Do)">
+                    <label>TONALITÉ (K:)</label>
+                    <input type="text" id="meta-key" placeholder="ex: G">
                 </div>
             </div>
-            <textarea id="abc-hidden" style="display:none;"></textarea>
+            <div style="text-align:right; margin-top:5px;">
+                <button onclick="document.getElementById('abc-hidden').style.display = 'block'" style="background:none; border:none; color:#555; cursor:pointer; font-size:10px; text-decoration:underline;">Voir code brut</button>
+            </div>
+            <textarea id="abc-hidden" style="display:none; width:100%; height:100px; background:#111; color:#0f0; font-family:monospace; margin-top:10px;"></textarea>
         </div>
 
         <div class="options-container">
@@ -56,19 +94,15 @@
 
         <div id="result-zone" class="result-hidden">
             <h2 id="final-title">Partition Transposée</h2>
-            <div id="audio" class="abcjs-large"></div>
+            <div id="audio"></div>
             <div id="paper"></div>
+            
             <button onclick="window.print()" class="download-btn">🖨️ Imprimer / PDF</button>
             <button onclick="window.location.reload()" class="secondary-btn">🔄 Nouveau</button>
         </div>
     </main>
 
     <script src="script.js"></script>
-    
-    <style>
-        .dash-card { background: #222; padding: 10px; border-radius: 8px; border: 1px solid #444; }
-        .dash-card label { display: block; font-size: 11px; color: #888; margin-bottom: 5px; text-transform: uppercase; }
-        .dash-card input { width: 100%; background: transparent; border: none; color: #00e5ff; font-weight: bold; font-size: 16px; outline: none; }
-    </style>
+    <footer style="margin-top:50px; color:#444; font-size:12px;"><p>Powered by Gemini Flash AI</p></footer>
 </body>
 </html>
