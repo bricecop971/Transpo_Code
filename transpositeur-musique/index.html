@@ -3,122 +3,121 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transpositeur Musique</title>
-    
+    <title>Smart Transpose AI</title>
     <link rel="stylesheet" href="style.css">
-
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-audio.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-    <script>
-        // On configure le "travailleur" (le petit ouvrier qui va lire le PDF)
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-    </script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
     <style>
-        /* 1. On cache le message d'erreur rouge de force */
-        .abcjs-css-warning { 
-            display: none !important; 
+        /* Style Rapide pour le Dashboard (Surchargé dans style.css normalement) */
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            margin: 20px auto;
+            width: 80%;
+            display: none; /* Caché au début */
         }
-
-        /* 2. On stylise la boîte du lecteur */
-        .abcjs-inline-audio {
-            background-color: #1e1e1e !important;
-            border: 1px solid #00e5ff !important;
-            border-radius: 8px !important;
-            color: #e0e0e0 !important;
-            padding: 8px !important;
-            display: flex !important;
-            align-items: center !important;
-            margin-top: 15px !important;
+        .dash-card {
+            background: #222;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            text-align: left;
         }
-
-        /* 3. On stylise les boutons (Play/Pause) */
-        .abcjs-btn {
-            background: transparent !important;
-            border: 1px solid #00e5ff !important;
-            border-radius: 4px !important;
-            width: 30px !important;
-            height: 30px !important;
-            margin-right: 10px !important;
-            padding: 4px !important;
+        .dash-card label { display: block; font-size: 12px; color: #888; margin-bottom: 5px;}
+        .dash-card input { width: 100%; background: transparent; border: none; color: #fff; font-weight: bold; font-size: 16px;}
+        
+        .abc-editor {
+            width: 80%;
+            height: 100px;
+            background: #111;
+            color: #0f0;
+            font-family: monospace;
+            margin: 0 auto;
+            display: none; /* On le cache, l'utilisateur normal n'a pas besoin de le voir */
         }
         
-        .abcjs-btn:hover {
-            background: #00e5ff !important;
+        .toggle-code {
+            color: #555;
+            font-size: 12px;
+            cursor: pointer;
+            margin-top: 5px;
+            text-decoration: underline;
         }
-        
-        /* La couleur des icônes dans les boutons */
-        .abcjs-btn svg path {
-            fill: #00e5ff !important;
-        }
-        .abcjs-btn:hover svg path {
-            fill: #000000 !important;
-        }
-
-        /* 4. La barre de progression */
-        .abcjs-midi-progress-background {
-            background: #333 !important;
-            border: 1px solid #555 !important;
-            height: 10px !important;
-            border-radius: 5px !important;
-            flex-grow: 1 !important; /* Prend toute la largeur dispo */
-            margin: 0 10px !important;
-        }
-        
-        .abcjs-midi-progress-indicator {
-            background: #00e5ff !important;
-        }
-
-        /* 5. On cache la sélection de piste inutile */
-        .abcjs-midi-selection { display: none !important; }
     </style>
 </head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <body>
 
     <header>
-        <h1>Transposition pour Musiciens</h1>
-        <p>Transposez vos partitions facilement.</p>
+        <h1>Smart Transpose AI</h1>
+        <p>L'IA au service de votre instrument</p>
     </header>
 
     <main>
         <div class="upload-zone">
-            <p>Déposez votre partition ici</p>
-            <input type="file" id="partition-upload">
+            <p>📸 Déposez une partition (PDF ou Image)</p>
+            <input type="file" id="partition-upload" accept="image/*,.pdf">
         </div>
-        <div class="text-mode">
-            <p>Écrivez vos notes ici (C, D, E... ou Do, Ré, Mi...)</p>
-            <textarea id="notes-input" placeholder="Exemple : C G Am F"></textarea>
+
+        <div id="music-dashboard" class="dashboard">
+            <div class="dash-card">
+                <label>TITRE</label>
+                <input type="text" id="meta-title" placeholder="Inconnu">
+            </div>
+            <div class="dash-card">
+                <label>SIGNATURE (MESURE)</label>
+                <input type="text" id="meta-meter" placeholder="ex: 4/4">
+            </div>
+            <div class="dash-card">
+                <label>TONALITÉ ORIGINALE</label>
+                <input type="text" id="meta-key" placeholder="ex: C (Do Maj)">
+            </div>
         </div>
+
+        <div style="text-align: center;">
+            <span class="toggle-code" onclick="toggleEditor()">Afficher/Masquer le code brut (Expert)</span>
+            <textarea id="notes-input" class="abc-editor"></textarea>
+        </div>
+
         <div class="options-container">
-            <label for="transposition">Transposer vers :</label>
+            <label for="transposition">Vers quel instrument ?</label>
             <select id="transposition">
                 <option value="Eb">Saxophone Alto (Mi bémol)</option>
                 <option value="Bb">Trompette / Clarinette (Si bémol)</option>
                 <option value="F">Cor (Fa)</option>
-                <option value="C">Piano / Flûte (Ut - Pas de changement)</option>
+                <option value="C" selected>Piano / Flûte (Pas de changement)</option>
             </select>
         </div>
-        <br>
-        <button>Transposer</button>
+
+        <button id="transpose-btn">✨ Transposer la Partition</button>
+
         <div id="result-zone" class="result-hidden">
-            <h2>✨ Transposition Terminée !</h2>
-            <p>Votre partition a été convertie pour : <strong id="instrument-display">Instrument</strong></p>
-            <div class="result-box">
-                <p id="result-notes" style="font-size: 20px; color: #00e5ff; font-family: monospace;">...</p>
-           <div id="audio" class="abcjs-large" style="margin-top: 15px;"></div>         
-            <div id="paper" style="background: white; padding: 20px; border-radius: 5px; margin-top: 20px; overflow-x: auto;"></div>
-            </div>
-           <a href="#" id="print-btn" class="download-btn">
-    ⬇️ Télécharger le PDF transposé
-            </a>
-            <button id="reset-btn" class="secondary-btn">🔄 Nouvelle transposition</button>
+            <h2>Résultat</h2>
+            <p>Transposé pour : <strong id="instrument-display">...</strong></p>
+            
+            <div id="audio" class="abcjs-large"></div>
+            <div id="paper"></div>
+
+            <a href="#" id="print-btn" class="download-btn">🖨️ Imprimer / PDF</a>
+            <button id="reset-btn" class="secondary-btn">🔄 Recommencer</button>
         </div>
     </main>
 
     <footer>
-        <p>© 2025 - Outil créé pour les musiciens</p>
+        <p>Technologie Gemini AI + Vercel</p>
     </footer>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
+
     <script src="script.js"></script>
+    <script>
+        function toggleEditor() {
+            const el = document.getElementById('notes-input');
+            el.style.display = el.style.display === 'block' ? 'none' : 'block';
+        }
+    </script>
 </body>
 </html>
