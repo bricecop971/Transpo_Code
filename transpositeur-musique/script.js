@@ -1,22 +1,29 @@
 // =========================================================
-//  SCRIPT.JS - VERSION FINALISÉE (RESPECT DU RYTHME)
+//  SCRIPT.JS - VERSION DASHBOARD (PARSING INTELLIGENT)
 // =========================================================
 
 const fileInput = document.getElementById('partition-upload');
 const uploadZone = document.querySelector('.upload-zone');
 const uploadText = document.querySelector('.upload-zone p');
-const transposeBtn = document.querySelector('button');
+const transposeBtn = document.getElementById('transpose-btn');
 const resultZone = document.getElementById('result-zone');
 const instrumentDisplay = document.getElementById('instrument-display');
 const selectInstrument = document.getElementById('transposition');
 const notesInput = document.getElementById('notes-input');
-const resultNotes = document.getElementById('result-notes');
+const dashboard = document.getElementById('music-dashboard');
+
+// Champs du dashboard
+const metaTitle = document.getElementById('meta-title');
+const metaMeter = document.getElementById('meta-meter');
+const metaKey = document.getElementById('meta-key');
+
 const resetBtn = document.getElementById('reset-btn');
 const printBtn = document.getElementById('print-btn');
 
-let originalAbcString = ""; 
+let originalAbcBody = ""; // Stocke les notes SANS les en-têtes
 
-// --- OUTILS ---
+// --- FONCTIONS UTILITAIRES ---
+
 function getBase64(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -56,16 +63,35 @@ async function convertPdfToImage(pdfFile) {
     return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.7));
 }
 
+// --- FONCTION DE PARSING (Le Traducteur) ---
+function parseAndFillDashboard(abcCode) {
+    // On extrait les infos avec des Regex
+    const titleMatch = abcCode.match(/^T:(.*)$/m);
+    const meterMatch = abcCode.match(/^M:(.*)$/m);
+    const keyMatch = abcCode.match(/^K:(.*)$/m);
+
+    // On remplit les cases (ou valeurs par défaut)
+    metaTitle.value = titleMatch ? titleMatch[1].trim() : "Partition sans titre";
+    metaMeter.value = meterMatch ? meterMatch[1].trim() : "4/4";
+    metaKey.value = keyMatch ? keyMatch[1].trim() : "C";
+
+    // On extrait juste les notes (tout ce qui n'est pas un header X: T: M: K: L:)
+    // On enlève les lignes qui commencent par une lettre majuscule suivie de deux points
+    const lines = abcCode.split('\n');
+    const noteLines = lines.filter(line => !/^[A-Z]:/.test(line));
+    originalAbcBody = noteLines.join('\n').trim();
+    
+    // On remplit aussi la zone cachée
+    notesInput.value = abcCode;
+}
+
 // --- CHARGEMENT ---
 fileInput.addEventListener('change', async function() {
     if (fileInput.files.length > 0) {
         const originalFile = fileInput.files[0];
         let imageToProcess;
 
-        uploadText.innerHTML = `
-            <strong>Analyse du Rythme & Tonalité...</strong><br>Patience 🎼<br>
-            <button onclick="window.location.reload()" style="background:#d32f2f; border:none; color:white; padding:5px; border-radius:5px; margin-top:10px; cursor:pointer;">❌ Annuler</button>
-        `;
+        uploadText.innerHTML = `<strong>Analyse IA en cours...</strong><br>Vérification du rythme ⏱️`;
         uploadZone.style.borderColor = "#00e5ff";
 
         try {
@@ -96,18 +122,17 @@ fileInput.addEventListener('change', async function() {
             const data = await response.json();
 
             if (data.error) throw new Error(data.error);
-            if (!data.abc) throw new Error("L'IA n'a pas renvoyé de code ABC valide.");
-
-            // SUCCÈS : On garde le code exact de l'IA (qui contient maintenant M: et K:)
-            originalAbcString = data.abc;
-            notesInput.value = originalAbcString;
-
-            uploadText.innerHTML = `<strong>Partition Détectée !</strong><br>Rythme et Clés trouvés.<br>Choisissez l'instrument ci-dessous.`;
+            
+            // SUCCÈS : On affiche le dashboard
+            uploadText.innerHTML = `<strong>Analyse Terminée !</strong><br>Vérifiez les infos ci-dessous.<br><button onclick="window.location.reload()" style="background:#333; color:white; border:none; padding:5px; margin-top:5px; cursor:pointer;">❌ Changer</button>`;
             uploadZone.style.borderColor = "#00ff00";
+            
+            dashboard.style.display = "grid"; // Affiche les cases
+            parseAndFillDashboard(data.abc);  // Remplit les cases
 
         } catch (error) {
             console.error(error);
-            uploadText.innerHTML = `<strong>Erreur</strong><br>${error.message}<br><button onclick="window.location.reload()">Réessayer</button>`;
+            uploadText.innerHTML = `<strong>Erreur</strong><br>${error.message}`;
             uploadZone.style.borderColor = "red";
         }
     }
@@ -115,41 +140,43 @@ fileInput.addEventListener('change', async function() {
 
 // --- TRANSPOSITION ---
 transposeBtn.addEventListener('click', function() {
-    let abcToRender = notesInput.value || originalAbcString;
-    
-    if (!abcToRender) {
-        alert("Veuillez d'abord charger une partition !");
+    if (!originalAbcBody) {
+        alert("Veuillez charger une partition d'abord !");
         return;
     }
 
     const instrumentKey = selectInstrument.value;
     const instrumentName = selectInstrument.options[selectInstrument.selectedIndex].text;
     
+    // Calcul transposition visuelle
     let visualTranspose = 0;
     if (instrumentKey === "Bb") visualTranspose = 2;
     else if (instrumentKey === "Eb") visualTranspose = 9;
     else if (instrumentKey === "F") visualTranspose = 7;
 
+    // RECONSTRUCTION DU CODE ABC PROPRE
+    // On prend les valeurs des inputs (l'utilisateur peut les avoir corrigées !)
+    const finalABC = `
+X:1
+T:${metaTitle.value}
+M:${metaMeter.value}
+K:${metaKey.value}
+L:1/4
+%%staffwidth 1000
+%%stretchlast 1
+${originalAbcBody}
+|]`;
+
     instrumentDisplay.innerText = instrumentName;
     resultZone.style.display = "block";
 
-    // ON AJOUTE JUSTE LE STYLE VISUEL (Largeur)
-    // Mais on ne touche pas aux headers musicaux (M:, K:, L:) qui sont dans abcToRender
-    if (!abcToRender.includes("%%staffwidth")) {
-        abcToRender = "%%staffwidth 1000\n%%stretchlast 1\n" + abcToRender;
-    }
-
-    const renderParams = {
+    // Dessin
+    const visualObj = ABCJS.renderAbc("paper", finalABC, {
         responsive: "resize",
-        visualTranspose: visualTranspose, // C'est abcjs qui fait le calcul savant ici
-        paddingtop: 20,
-        paddingbottom: 20,
-        paddingleft: 20,
-        paddingright: 20
-    };
+        visualTranspose: visualTranspose // La magie opère ici
+    });
 
-    const visualObj = ABCJS.renderAbc("paper", abcToRender, renderParams);
-
+    // Audio
     if (ABCJS.synth.supportsAudio()) {
         const synthControl = new ABCJS.synth.SynthController();
         synthControl.load("#audio", null, { displayLoop: true, displayRestart: true, displayPlay: true, displayProgress: true, displayWarp: true });
