@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : RYTHME & ABC
+// VERSION : GÉNÉRATION 2.5 (LES NOUVEAUX STANDARDS)
 
 export const config = {
     api: {
@@ -23,10 +23,18 @@ export default async function handler(req, res) {
         const { image, mimeType } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
+        // LISTE DES MODÈLES ACTIFS (Fin 2025)
+        // On priorise le "Lite" qui est le nouveau standard gratuit/léger
+        const MODELS_TO_TRY = [
+            "gemini-2.5-flash-lite",     // Le remplaçant officiel du 1.5 Flash
+            "gemini-2.5-flash",          // La version standard rapide
+            "gemini-2.0-flash-lite-001", // L'ancienne version stable du Lite
+            "gemini-2.0-flash-001"       // L'ancienne version stable du Flash
+        ];
+
         const requestBody = {
             contents: [{
                 parts: [
-                    // NOUVELLE CONSIGNE : On demande du format ABC strict avec le rythme
                     { text: "Analyze this sheet music. Transcribe it into ABC Notation. Include the note durations (rhythm) and accidentals (^ for sharp, _ for flat). Do not include headers (X:, T:, etc). Just the note sequence. Example: C2 D/2 ^F G" },
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
@@ -39,27 +47,45 @@ export default async function handler(req, res) {
             ]
         };
 
-        // On utilise le modèle Flash (gratuit et rapide)
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        let lastError = "";
 
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
-        });
+        // BOUCLE DE TENTATIVES
+        for (const model of MODELS_TO_TRY) {
+            try {
+                // On utilise v1beta qui est requis pour les modèles 2.5
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-        const data = await response.json();
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
 
-        if (data.error) {
-            return res.status(500).json({ error: "Erreur Google : " + data.error.message });
+                const data = await response.json();
+
+                // Si erreur (Modèle introuvable ou Quota), on passe au suivant
+                if (data.error) {
+                    console.warn(`Échec avec ${model} : ${data.error.message}`);
+                    lastError = `(${model}) : ${data.error.message}`;
+                    
+                    // Si c'est une erreur de quota (429), on ne s'acharne pas sur ce modèle précis
+                    continue; 
+                }
+
+                // SUCCÈS !
+                if (data.candidates && data.candidates[0].content) {
+                    const notes = data.candidates[0].content.parts[0].text;
+                    return res.status(200).json({ notes: notes, modelUsed: model });
+                }
+
+            } catch (error) {
+                console.error(`Crash avec ${model}`);
+                lastError = error.message;
+            }
         }
-        
-        if (data.candidates && data.candidates[0].content) {
-            const notes = data.candidates[0].content.parts[0].text;
-            return res.status(200).json({ notes: notes });
-        } else {
-            return res.status(500).json({ error: "L'IA n'a pas trouvé de notes." });
-        }
+
+        // Si tout a échoué
+        return res.status(500).json({ error: "Échec sur tous les modèles 2.5. Dernière erreur : " + lastError });
 
     } catch (error) {
         return res.status(500).json({ error: 'Erreur Serveur Vercel : ' + error.message });
