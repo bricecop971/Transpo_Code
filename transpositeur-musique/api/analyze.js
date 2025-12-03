@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : DÉTECTION COMPLÈTE (Rythme + Tonalité)
+// VERSION : EXPERT RYTHME & STRUCTURE
 
 export const config = {
     api: {
@@ -19,31 +19,22 @@ export default async function handler(req, res) {
         const { image, mimeType } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        // 1. SÉLECTION DU MODÈLE (Scanner Intelligent)
-        const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
-        const listResp = await fetch(listUrl);
-        const listData = await listResp.json();
-        const models = listData.models || [];
-        
-        // On évite le 2.0 (quota) et on cherche Flash ou Pro
-        const validModels = models.filter(m => 
-            m.supportedGenerationMethods.includes("generateContent") && 
-            !m.name.includes("2.0") &&
-            !m.name.endsWith("gemini-pro")
-        );
-        
-        let chosenModel = validModels.find(m => m.name.includes("flash")); // Priorité Flash
-        if (!chosenModel) chosenModel = validModels[0]; // Sinon le premier dispo
-
-        if (!chosenModel) return res.status(500).json({ error: "Aucun modèle IA compatible trouvé." });
-        
-        const modelName = chosenModel.name.replace("models/", "");
-
-        // 2. CONSIGNE EXPERTE (C'est ici que tout change !)
         const requestBody = {
             contents: [{
                 parts: [
-                    { text: "Analyze this sheet music. Convert it to full ABC Notation. \nIMPORTANT: \n1. Detect the Key Signature (K:). \n2. Detect the Time Signature (M:). \n3. Detect the Unit Note Length (L:). \n4. Transcribe the notes with correct rhythm (e.g. c2, d/2). \nOutput ONLY the ABC code block starting with X:1." },
+                    { text: `
+                        Act as a professional music transcriber. Convert this sheet music to ABC Notation.
+                        
+                        CRITICAL RULES FOR RHYTHM:
+                        1. Identify the Time Signature (e.g. M:4/4).
+                        2. You MUST ensure that the sum of note durations in every bar matches the Time Signature exactly. 
+                        3. If you see a half note, write it as '2'. If a dotted quarter, '3/2'. Do not guess. Be mathematically precise.
+                        4. Detect the Key Signature (K:) accurately (count sharps/flats).
+
+                        OUTPUT FORMAT:
+                        Return ONLY the raw ABC code starting with X:1.
+                        Do NOT add explanations or markdown blocks.
+                    `},
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
             }],
@@ -55,7 +46,9 @@ export default async function handler(req, res) {
             ]
         };
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+        // On utilise le modèle Flash 1.5 (le plus stable pour les quotas actuels)
+        // Si besoin, le code peut basculer sur Pro, mais Flash est meilleur en maths rapides
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
         const response = await fetch(url, {
             method: 'POST',
@@ -65,11 +58,10 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
-        if (data.error) return res.status(500).json({ error: `Erreur Google (${modelName}) : ` + data.error.message });
+        if (data.error) return res.status(500).json({ error: "Erreur Google : " + data.error.message });
         
         if (data.candidates && data.candidates[0].content) {
             let abcCode = data.candidates[0].content.parts[0].text;
-            // Nettoyage du code
             abcCode = abcCode.replace(/```abc/gi, "").replace(/```/g, "").trim();
             return res.status(200).json({ abc: abcCode });
         } else {
