@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : PRÉCISION RENFORCÉE (Compter les dièses)
+// VERSION : INSPECTEUR (Commentaires explicatifs)
 
 export const config = {
     api: {
@@ -19,44 +19,44 @@ export default async function handler(req, res) {
         const { image, mimeType } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        // --- 1. SÉLECTION DU MODÈLE ---
+        // LISTE DES MODÈLES (Scanner)
         const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
         const listResp = await fetch(listUrl);
         const listData = await listResp.json();
         const models = listData.models || [];
         
-        // On prend Flash (rapide et bon pour le texte structuré)
-        let chosenModel = models.find(m => m.name.includes("flash") && !m.name.includes("2.0"));
-        if (!chosenModel) chosenModel = models.find(m => m.supportedGenerationMethods.includes("generateContent"));
-        
+        // On cherche Flash ou Pro (en évitant le 2.0 buggé pour l'instant)
+        let chosenModel = models.find(m => m.name.includes("flash") && !m.name.includes("2.0") && m.supportedGenerationMethods.includes("generateContent"));
+        if (!chosenModel) chosenModel = models.find(m => m.name.includes("pro") && !m.name.includes("2.0"));
+        if (!chosenModel) chosenModel = models[0];
+
         const modelName = chosenModel.name.replace("models/", "");
 
-        // --- 2. CONSIGNE "CHAÎNE DE PENSÉE" ---
-        // On force l'IA à réfléchir étape par étape pour ne pas rater la tonalité
+        // CONSIGNE "INSPECTEUR"
         const requestBody = {
             contents: [{
                 parts: [
                     { text: `
-                        You are an expert music transcriber. Convert this image to ABC Notation.
+                        Transcribe this sheet music to ABC Notation.
                         
-                        STEP-BY-STEP INSTRUCTIONS:
-                        1. Look at the beginning of the staff. COUNT the sharps (#) or flats (b).
-                           - 0 sharp/flat = K:C (Do Maj) or K:Am
-                           - 1 sharp = K:G (Sol Maj) or K:Em
-                           - 1 flat = K:F (Fa Maj) or K:Dm
-                           - 2 sharps = K:D ...
-                           -> BE VERY CAREFUL. Do not hallucinate sharps that are not there.
+                        CRITICAL INSTRUCTION: Add comments starting with '%' to explain your findings.
                         
-                        2. Identify the Time Signature (e.g., 2/4, 4/4, 6/8). Write it as M:x/x.
+                        1. KEY SIGNATURE: Count sharps (#) and flats (b) at the very beginning of the staff carefully.
+                           - If you see 1 sharp, write: % Detected 1 Sharp (G Major) -> K:G
+                           - If you see 4 sharps, write: % Detected 4 Sharps (E Major) -> K:E
                         
-                        3. Transcribe the notes and RHYTHM. 
-                           - Use 'L:1/4' as default unit.
-                           - A quarter note (noire) = c
-                           - A half note (blanche) = c2
-                           - An eighth note (croche) = c/2
+                        2. TIME SIGNATURE: Look for 4/4, C, 2/4, etc. Write it in M:.
                         
-                        OUTPUT:
-                        Return ONLY the ABC code block. Start with X:1. 
+                        3. NOTES: Transcribe the melody. Use '2' for half notes, '4' for whole notes.
+                        
+                        OUTPUT FORMAT EXAMPLE:
+                        X:1
+                        % Detected Key: 1 Sharp
+                        K:G
+                        % Detected Time: 4/4
+                        M:4/4
+                        L:1/4
+                        c d e f | g2 g2 |
                     `},
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
@@ -79,7 +79,7 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
-        if (data.error) return res.status(500).json({ error: `Erreur Google : ` + data.error.message });
+        if (data.error) return res.status(500).json({ error: `Erreur Google (${modelName}) : ` + data.error.message });
         
         if (data.candidates && data.candidates[0].content) {
             let abcCode = data.candidates[0].content.parts[0].text;
