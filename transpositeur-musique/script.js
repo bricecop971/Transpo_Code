@@ -1,5 +1,5 @@
 // =========================================================
-//  SCRIPT.JS - VERSION PRO (ABC NATIF + TRANSPOSITION VISUELLE)
+//  SCRIPT.JS - VERSION FINALISÉE (RESPECT DU RYTHME)
 // =========================================================
 
 const fileInput = document.getElementById('partition-upload');
@@ -10,15 +10,13 @@ const resultZone = document.getElementById('result-zone');
 const instrumentDisplay = document.getElementById('instrument-display');
 const selectInstrument = document.getElementById('transposition');
 const notesInput = document.getElementById('notes-input');
-const resultNotes = document.getElementById('result-notes'); // On s'en servira pour afficher le code ABC
+const resultNotes = document.getElementById('result-notes');
 const resetBtn = document.getElementById('reset-btn');
 const printBtn = document.getElementById('print-btn');
 
-// Variable pour stocker la partition originale reçue de l'IA
 let originalAbcString = ""; 
 
-// --- 1. OUTILS IMAGES (Compression & Base64) ---
-
+// --- OUTILS ---
 function getBase64(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -49,7 +47,7 @@ async function convertPdfToImage(pdfFile) {
     const arrayBuffer = await pdfFile.arrayBuffer();
     const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
     const page = await pdf.getPage(1);
-    const viewport = page.getViewport({ scale: 1.5 }); // Meilleure qualité pour lire le rythme
+    const viewport = page.getViewport({ scale: 1.5 });
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     canvas.height = viewport.height;
@@ -58,23 +56,19 @@ async function convertPdfToImage(pdfFile) {
     return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.7));
 }
 
-// --- 2. CHARGEMENT ET ANALYSE IA ---
-
+// --- CHARGEMENT ---
 fileInput.addEventListener('change', async function() {
     if (fileInput.files.length > 0) {
         const originalFile = fileInput.files[0];
         let imageToProcess;
 
-        // Interface Bleue (Chargement)
         uploadText.innerHTML = `
-            <strong>Analyse approfondie...</strong><br>Lecture du rythme et des clés 🎼<br>
-            <button onclick="window.location.reload()" style="background:#d32f2f; border:none; color:white; padding:5px 10px; border-radius:5px; margin-top:10px; cursor:pointer;">❌ Annuler</button>
+            <strong>Analyse du Rythme & Tonalité...</strong><br>Patience 🎼<br>
+            <button onclick="window.location.reload()" style="background:#d32f2f; border:none; color:white; padding:5px; border-radius:5px; margin-top:10px; cursor:pointer;">❌ Annuler</button>
         `;
         uploadZone.style.borderColor = "#00e5ff";
-        uploadZone.style.boxShadow = "0 0 20px rgba(0, 229, 255, 0.5)";
 
         try {
-            // Conversion PDF si besoin
             if (originalFile.type === 'application/pdf') {
                 const pdfBlob = await convertPdfToImage(originalFile);
                 imageToProcess = await compressImage(new File([pdfBlob], "temp.jpg"));
@@ -92,7 +86,6 @@ fileInput.addEventListener('change', async function() {
                 imageToProcess = await compressImage(originalFile);
             }
 
-            // Envoi au serveur
             const base64 = await getBase64(imageToProcess);
             const response = await fetch('/api/analyze', {
                 method: 'POST',
@@ -103,15 +96,13 @@ fileInput.addEventListener('change', async function() {
             const data = await response.json();
 
             if (data.error) throw new Error(data.error);
-            if (!data.abc) throw new Error("L'IA n'a pas renvoyé de partition valide.");
+            if (!data.abc) throw new Error("L'IA n'a pas renvoyé de code ABC valide.");
 
-            // SUCCÈS ! On stocke le code ABC original
+            // SUCCÈS : On garde le code exact de l'IA (qui contient maintenant M: et K:)
             originalAbcString = data.abc;
-            
-            // On l'affiche dans la zone de texte pour que l'utilisateur puisse le corriger si besoin
             notesInput.value = originalAbcString;
 
-            uploadText.innerHTML = `<strong>Partition Capturée !</strong><br>Rythme et notes détectés.<br>Choisissez votre instrument ci-dessous.`;
+            uploadText.innerHTML = `<strong>Partition Détectée !</strong><br>Rythme et Clés trouvés.<br>Choisissez l'instrument ci-dessous.`;
             uploadZone.style.borderColor = "#00ff00";
 
         } catch (error) {
@@ -122,10 +113,8 @@ fileInput.addEventListener('change', async function() {
     }
 });
 
-// --- 3. TRANSPOSITION ET AFFICHAGE ---
-
+// --- TRANSPOSITION ---
 transposeBtn.addEventListener('click', function() {
-    // Si l'utilisateur a modifié le texte manuellement, on prend sa version
     let abcToRender = notesInput.value || originalAbcString;
     
     if (!abcToRender) {
@@ -136,22 +125,23 @@ transposeBtn.addEventListener('click', function() {
     const instrumentKey = selectInstrument.value;
     const instrumentName = selectInstrument.options[selectInstrument.selectedIndex].text;
     
-    // Définition du décalage en demi-tons
     let visualTranspose = 0;
-    if (instrumentKey === "Bb") visualTranspose = 2;      // +2 demi-tons (Do -> Ré)
-    else if (instrumentKey === "Eb") visualTranspose = 9; // +9 demi-tons (Do -> La)
-    else if (instrumentKey === "F") visualTranspose = 7;  // +7 demi-tons (Do -> Sol)
+    if (instrumentKey === "Bb") visualTranspose = 2;
+    else if (instrumentKey === "Eb") visualTranspose = 9;
+    else if (instrumentKey === "F") visualTranspose = 7;
 
     instrumentDisplay.innerText = instrumentName;
     resultZone.style.display = "block";
 
-    // --- LE SECRET EST ICI ---
-    // On utilise la fonction native de abcjs pour transposer visuellement
-    // Cela préserve tout le reste (rythme, barres, titre...)
+    // ON AJOUTE JUSTE LE STYLE VISUEL (Largeur)
+    // Mais on ne touche pas aux headers musicaux (M:, K:, L:) qui sont dans abcToRender
+    if (!abcToRender.includes("%%staffwidth")) {
+        abcToRender = "%%staffwidth 1000\n%%stretchlast 1\n" + abcToRender;
+    }
+
     const renderParams = {
         responsive: "resize",
-        visualTranspose: visualTranspose, // C'est ça qui fait la magie !
-        staffwidth: 1000,
+        visualTranspose: visualTranspose, // C'est abcjs qui fait le calcul savant ici
         paddingtop: 20,
         paddingbottom: 20,
         paddingleft: 20,
@@ -160,19 +150,15 @@ transposeBtn.addEventListener('click', function() {
 
     const visualObj = ABCJS.renderAbc("paper", abcToRender, renderParams);
 
-    // Audio (Synthé)
-    // Note : Pour que l'audio soit transposé aussi, on doit feinter un peu
-    // car visualTranspose est purement visuel. Mais pour l'instant, concentrons-nous sur la partition.
     if (ABCJS.synth.supportsAudio()) {
         const synthControl = new ABCJS.synth.SynthController();
         synthControl.load("#audio", null, { displayLoop: true, displayRestart: true, displayPlay: true, displayProgress: true, displayWarp: true });
         const createSynth = new ABCJS.synth.CreateSynth();
-        // Pour l'audio transposé, il faudrait idéalement régénérer le ABC, mais visualObj contient les notes affichées
         createSynth.init({ visualObj: visualObj[0] }).then(() => synthControl.setTune(visualObj[0], false));
     }
     
     resultZone.scrollIntoView({behavior: "smooth"});
 });
 
-resetBtn.addEventListener('click', resetPage);
+resetBtn.addEventListener('click', () => window.location.reload());
 printBtn.addEventListener('click', (e) => { e.preventDefault(); window.print(); });
