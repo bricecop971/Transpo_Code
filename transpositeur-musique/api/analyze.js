@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : GÉNÉRATION 2.5 (LES NOUVEAUX STANDARDS)
+// VERSION : EXTRACTION ABC COMPLÈTE (RYTHME & TONALITÉ)
 
 export const config = {
     api: {
@@ -23,19 +23,19 @@ export default async function handler(req, res) {
         const { image, mimeType } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        // LISTE DES MODÈLES ACTIFS (Fin 2025)
-        // On priorise le "Lite" qui est le nouveau standard gratuit/léger
+        // LISTE DES MODÈLES (On cible la série 1.5 Flash ou Pro qui sont bons en OCR)
         const MODELS_TO_TRY = [
-            "gemini-2.5-flash-lite",     // Le remplaçant officiel du 1.5 Flash
-            "gemini-2.5-flash",          // La version standard rapide
-            "gemini-2.0-flash-lite-001", // L'ancienne version stable du Lite
-            "gemini-2.0-flash-001"       // L'ancienne version stable du Flash
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
+            "gemini-1.5-flash-001",
+            "gemini-1.5-flash-002"
         ];
 
+        // CONSIGNE EXPERTE : On demande une transcription ABC stricte
         const requestBody = {
             contents: [{
                 parts: [
-                    { text: "Analyze this sheet music. Transcribe it into ABC Notation. Include the note durations (rhythm) and accidentals (^ for sharp, _ for flat). Do not include headers (X:, T:, etc). Just the note sequence. Example: C2 D/2 ^F G" },
+                    { text: "Transcribe this sheet music into valid ABC Notation. Capture precisely: 1. The Key Signature (K:), 2. The Time Signature (M:), 3. The Note Durations (rhythm), 4. The Beaming and Bar lines. Do NOT simplify. Output ONLY the ABC code block starting with X:1. Do not add explanations." },
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
             }],
@@ -49,10 +49,9 @@ export default async function handler(req, res) {
 
         let lastError = "";
 
-        // BOUCLE DE TENTATIVES
+        // BOUCLE DE TENTATIVES SUR LES MODÈLES
         for (const model of MODELS_TO_TRY) {
             try {
-                // On utilise v1beta qui est requis pour les modèles 2.5
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
                 const response = await fetch(url, {
@@ -63,31 +62,30 @@ export default async function handler(req, res) {
 
                 const data = await response.json();
 
-                // Si erreur (Modèle introuvable ou Quota), on passe au suivant
                 if (data.error) {
-                    console.warn(`Échec avec ${model} : ${data.error.message}`);
-                    lastError = `(${model}) : ${data.error.message}`;
-                    
-                    // Si c'est une erreur de quota (429), on ne s'acharne pas sur ce modèle précis
+                    console.warn(`Échec ${model}: ${data.error.message}`);
+                    lastError = data.error.message;
                     continue; 
                 }
 
-                // SUCCÈS !
                 if (data.candidates && data.candidates[0].content) {
-                    const notes = data.candidates[0].content.parts[0].text;
-                    return res.status(200).json({ notes: notes, modelUsed: model });
+                    // On nettoie la réponse pour n'avoir que le code ABC
+                    let abcCode = data.candidates[0].content.parts[0].text;
+                    // Petit nettoyage si l'IA ajoute des ```abc ... ```
+                    abcCode = abcCode.replace(/```abc/g, "").replace(/```/g, "").trim();
+                    
+                    return res.status(200).json({ abc: abcCode, modelUsed: model });
                 }
 
             } catch (error) {
-                console.error(`Crash avec ${model}`);
+                console.error(`Crash ${model}`, error);
                 lastError = error.message;
             }
         }
 
-        // Si tout a échoué
-        return res.status(500).json({ error: "Échec sur tous les modèles 2.5. Dernière erreur : " + lastError });
+        return res.status(500).json({ error: "Échec analyse : " + lastError });
 
     } catch (error) {
-        return res.status(500).json({ error: 'Erreur Serveur Vercel : ' + error.message });
+        return res.status(500).json({ error: 'Erreur Serveur : ' + error.message });
     }
 }
