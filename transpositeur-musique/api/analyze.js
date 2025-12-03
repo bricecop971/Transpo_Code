@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : EXTRACTION ABC COMPLÈTE (RYTHME & TONALITÉ)
+// VERSION : SÉCURITÉ DOUBLE (Flash -> Pro)
 
 export const config = {
     api: {
@@ -10,32 +10,27 @@ export const config = {
 };
 
 export default async function handler(req, res) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method Not Allowed' });
-    }
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-        return res.status(500).json({ error: 'Clé API manquante sur Vercel' });
-    }
+    if (!apiKey) return res.status(500).json({ error: 'Clé API manquante' });
 
     try {
         const { image, mimeType } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        // LISTE DES MODÈLES (On cible la série 1.5 Flash ou Pro qui sont bons en OCR)
-        const MODELS_TO_TRY = [
-            "gemini-1.5-flash",
-            "gemini-1.5-pro",
-            "gemini-1.5-flash-001",
-            "gemini-1.5-flash-002"
-        ];
+        // ON DÉFINIT NOS DEUX CHAMPIONS
+        // 1. Le standard rapide (Priorité)
+        // 2. Le standard puissant (Secours)
+        const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro"];
+        
+        let lastError = "";
 
-        // CONSIGNE EXPERTE : On demande une transcription ABC stricte
+        // CONSIGNE POUR AVOIR LE FORMAT ABC (RYTHME)
         const requestBody = {
             contents: [{
                 parts: [
-                    { text: "Transcribe this sheet music into valid ABC Notation. Capture precisely: 1. The Key Signature (K:), 2. The Time Signature (M:), 3. The Note Durations (rhythm), 4. The Beaming and Bar lines. Do NOT simplify. Output ONLY the ABC code block starting with X:1. Do not add explanations." },
+                    { text: "Transcribe this sheet music to ABC Notation. Output ONLY the music code starting with X:1. Include rhythm (L:1/4 default) and accidentals. Ignore lyrics and text." },
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
             }],
@@ -47,43 +42,47 @@ export default async function handler(req, res) {
             ]
         };
 
-        let lastError = "";
-
-        // BOUCLE DE TENTATIVES SUR LES MODÈLES
-        for (const model of MODELS_TO_TRY) {
+        // BOUCLE DE TENTATIVE
+        for (const model of modelsToTry) {
             try {
+                console.log(`Tentative avec ${model}...`);
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+                // On ajoute un timeout de 15 secondes pour ne pas bloquer Vercel
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
 
                 const response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody)
+                    body: JSON.stringify(requestBody),
+                    signal: controller.signal
                 });
+                clearTimeout(timeoutId);
 
                 const data = await response.json();
 
                 if (data.error) {
-                    console.warn(`Échec ${model}: ${data.error.message}`);
+                    console.warn(`Erreur sur ${model}: ${data.error.message}`);
                     lastError = data.error.message;
-                    continue; 
+                    continue; // On passe au modèle suivant (Pro)
                 }
 
                 if (data.candidates && data.candidates[0].content) {
-                    // On nettoie la réponse pour n'avoir que le code ABC
                     let abcCode = data.candidates[0].content.parts[0].text;
-                    // Petit nettoyage si l'IA ajoute des ```abc ... ```
-                    abcCode = abcCode.replace(/```abc/g, "").replace(/```/g, "").trim();
-                    
+                    // Nettoyage
+                    abcCode = abcCode.replace(/```abc/gi, "").replace(/```/g, "").trim();
                     return res.status(200).json({ abc: abcCode, modelUsed: model });
                 }
 
-            } catch (error) {
-                console.error(`Crash ${model}`, error);
-                lastError = error.message;
+            } catch (err) {
+                console.error(`Crash sur ${model}: ${err.message}`);
+                lastError = err.message;
             }
         }
 
-        return res.status(500).json({ error: "Échec analyse : " + lastError });
+        // Si on est ici, c'est que Flash ET Pro ont échoué
+        return res.status(500).json({ error: "Échec Google : " + lastError });
 
     } catch (error) {
         return res.status(500).json({ error: 'Erreur Serveur : ' + error.message });
