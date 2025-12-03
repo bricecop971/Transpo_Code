@@ -1,6 +1,3 @@
-// api/analyze.js
-// VERSION : GEMINI 2.0 FLASH (RAPIDE & PUISSANT)
-
 export const config = {
     api: {
         bodyParser: {
@@ -26,20 +23,14 @@ export default async function handler(req, res) {
         const requestBody = {
             contents: [{
                 parts: [
-                    { text: "Analyze this sheet music. Identify the musical notes. Output ONLY the note names in English (C D E...) separated by spaces. Ignore title/clefs. If unsure, guess." },
+                    { text: "Analyze this sheet music. Output ONLY the note names in English (C D E...) separated by spaces. Ignore title/clefs. If unsure, guess." },
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
-            }],
-            safetySettings: [
-                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-            ]
+            }]
         };
 
-        // ON CIBLE LE MODÈLE 2.0 FLASH EXPÉRIMENTAL
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
+        // Modèle standard stable : gemini-1.5-flash
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
         const response = await fetch(url, {
             method: 'POST',
@@ -49,13 +40,8 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
-        // Gestion des erreurs
         if (data.error) {
-            // Si le 2.0 est aussi surchargé, on prévient
-            if (data.error.message.includes("429") || data.error.message.includes("quota")) {
-                return res.status(429).json({ error: "Trop de demandes (Quota). Attendez 1 minute." });
-            }
-            return res.status(500).json({ error: "Erreur Google (2.0 Flash) : " + data.error.message });
+            return res.status(500).json({ error: "Erreur Google : " + data.error.message });
         }
         
         if (data.candidates && data.candidates[0].content) {
@@ -66,6 +52,6 @@ export default async function handler(req, res) {
         }
 
     } catch (error) {
-        return res.status(500).json({ error: 'Erreur Serveur Vercel : ' + error.message });
+        return res.status(500).json({ error: 'Erreur Serveur : ' + error.message });
     }
 }
