@@ -3,121 +3,72 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Transpose AI</title>
+    <title>Transpositeur Intelligent</title>
     <link rel="stylesheet" href="style.css">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-audio.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-
-    <style>
-        /* Style Rapide pour le Dashboard (Surchargé dans style.css normalement) */
-        .dashboard {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 10px;
-            margin: 20px auto;
-            width: 80%;
-            display: none; /* Caché au début */
-        }
-        .dash-card {
-            background: #222;
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid #444;
-            text-align: left;
-        }
-        .dash-card label { display: block; font-size: 12px; color: #888; margin-bottom: 5px;}
-        .dash-card input { width: 100%; background: transparent; border: none; color: #fff; font-weight: bold; font-size: 16px;}
-        
-        .abc-editor {
-            width: 80%;
-            height: 100px;
-            background: #111;
-            color: #0f0;
-            font-family: monospace;
-            margin: 0 auto;
-            display: none; /* On le cache, l'utilisateur normal n'a pas besoin de le voir */
-        }
-        
-        .toggle-code {
-            color: #555;
-            font-size: 12px;
-            cursor: pointer;
-            margin-top: 5px;
-            text-decoration: underline;
-        }
-    </style>
 </head>
 <body>
 
     <header>
-        <h1>Smart Transpose AI</h1>
-        <p>L'IA au service de votre instrument</p>
+        <h1>🎼 Transpositeur IA</h1>
+        <p>Analyse rythmique et harmonique automatique</p>
     </header>
 
     <main>
         <div class="upload-zone">
-            <p>📸 Déposez une partition (PDF ou Image)</p>
+            <p>📸 Déposez votre partition ici (PDF / Image)</p>
             <input type="file" id="partition-upload" accept="image/*,.pdf">
         </div>
 
-        <div id="music-dashboard" class="dashboard">
-            <div class="dash-card">
-                <label>TITRE</label>
-                <input type="text" id="meta-title" placeholder="Inconnu">
+        <div id="dashboard" style="display:none; margin: 20px auto; width: 80%; text-align: left;">
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px;">
+                <div class="dash-card">
+                    <label>TITRE</label>
+                    <input type="text" id="meta-title" placeholder="Inconnu">
+                </div>
+                <div class="dash-card">
+                    <label>MESURE (RYTHME)</label>
+                    <input type="text" id="meta-meter" placeholder="ex: 4/4">
+                </div>
+                <div class="dash-card">
+                    <label>TONALITÉ</label>
+                    <input type="text" id="meta-key" placeholder="ex: C (Do)">
+                </div>
             </div>
-            <div class="dash-card">
-                <label>SIGNATURE (MESURE)</label>
-                <input type="text" id="meta-meter" placeholder="ex: 4/4">
-            </div>
-            <div class="dash-card">
-                <label>TONALITÉ ORIGINALE</label>
-                <input type="text" id="meta-key" placeholder="ex: C (Do Maj)">
-            </div>
-        </div>
-
-        <div style="text-align: center;">
-            <span class="toggle-code" onclick="toggleEditor()">Afficher/Masquer le code brut (Expert)</span>
-            <textarea id="notes-input" class="abc-editor"></textarea>
+            <textarea id="abc-hidden" style="display:none;"></textarea>
         </div>
 
         <div class="options-container">
-            <label for="transposition">Vers quel instrument ?</label>
+            <label>Transposer vers :</label>
             <select id="transposition">
                 <option value="Eb">Saxophone Alto (Mi bémol)</option>
                 <option value="Bb">Trompette / Clarinette (Si bémol)</option>
                 <option value="F">Cor (Fa)</option>
-                <option value="C" selected>Piano / Flûte (Pas de changement)</option>
+                <option value="C" selected>Piano / Flûte (Original)</option>
             </select>
         </div>
 
-        <button id="transpose-btn">✨ Transposer la Partition</button>
+        <button id="transpose-btn">✨ Transposer</button>
 
         <div id="result-zone" class="result-hidden">
-            <h2>Résultat</h2>
-            <p>Transposé pour : <strong id="instrument-display">...</strong></p>
-            
+            <h2 id="final-title">Partition Transposée</h2>
             <div id="audio" class="abcjs-large"></div>
             <div id="paper"></div>
-
-            <a href="#" id="print-btn" class="download-btn">🖨️ Imprimer / PDF</a>
-            <button id="reset-btn" class="secondary-btn">🔄 Recommencer</button>
+            <button onclick="window.print()" class="download-btn">🖨️ Imprimer / PDF</button>
+            <button onclick="window.location.reload()" class="secondary-btn">🔄 Nouveau</button>
         </div>
     </main>
 
-    <footer>
-        <p>Technologie Gemini AI + Vercel</p>
-    </footer>
-
     <script src="script.js"></script>
-    <script>
-        function toggleEditor() {
-            const el = document.getElementById('notes-input');
-            el.style.display = el.style.display === 'block' ? 'none' : 'block';
-        }
-    </script>
+    
+    <style>
+        .dash-card { background: #222; padding: 10px; border-radius: 8px; border: 1px solid #444; }
+        .dash-card label { display: block; font-size: 11px; color: #888; margin-bottom: 5px; text-transform: uppercase; }
+        .dash-card input { width: 100%; background: transparent; border: none; color: #00e5ff; font-weight: bold; font-size: 16px; outline: none; }
+    </style>
 </body>
 </html>
