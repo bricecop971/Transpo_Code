@@ -151,12 +151,11 @@ fileInput.addEventListener('change', async function() {
         // On cherche le bon endroit.
         let safeData = responseData.musicData;
         
-        if (!safeData) {
-            // Si vide, c'est peut-être direct à la racine (rare) ou mal formaté
-            // On tente de voir si c'est responseData tout court
-            if (responseData.title) safeData = responseData;
-            else throw new Error("Format de données reçu invalide.");
+     // Si jamais (très rare avec le schéma strict) c'est à la racine :
+        if (!safeData && responseData.title) {
+            safeData = responseData;
         }
+        if (!safeData) throw new Error("Format de données reçu invalide (JSON vide).");
 
         currentMusicData = safeData;
 
@@ -213,3 +212,4 @@ transposeBtn.addEventListener('click', function() {
     
     resultZone.scrollIntoView({behavior: "smooth"});
 });
+
