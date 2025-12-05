@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : INSPECTEUR (Commentaires explicatifs)
+// VERSION : SCHEMA STRICT (Anti-Hallucination)
 
 export const config = {
     api: {
@@ -19,45 +19,53 @@ export default async function handler(req, res) {
         const { image, mimeType } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        // LISTE DES MODÈLES (Scanner)
+        // LISTE DES MODÈLES
         const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
         const listResp = await fetch(listUrl);
         const listData = await listResp.json();
         const models = listData.models || [];
         
-        // On cherche Flash ou Pro (en évitant le 2.0 buggé pour l'instant)
         let chosenModel = models.find(m => m.name.includes("flash") && !m.name.includes("2.0") && m.supportedGenerationMethods.includes("generateContent"));
         if (!chosenModel) chosenModel = models.find(m => m.name.includes("pro") && !m.name.includes("2.0"));
         if (!chosenModel) chosenModel = models[0];
 
         const modelName = chosenModel.name.replace("models/", "");
 
-        // CONSIGNE "INSPECTEUR"
+        // --- DÉFINITION DU SCHÉMA JSON STRICT ---
+        // On explique à l'API exactement à quoi doit ressembler le JSON
+        const generationConfig = {
+            response_mime_type: "application/json",
+            response_schema: {
+                type: "OBJECT",
+                properties: {
+                    title: { type: "STRING" },
+                    keySignature: { type: "STRING" },
+                    timeSignature: { type: "STRING" },
+                    measures: {
+                        type: "ARRAY",
+                        items: {
+                            type: "ARRAY",
+                            items: {
+                                type: "OBJECT",
+                                properties: {
+                                    note: { type: "STRING" },
+                                    octave: { type: "INTEGER" },
+                                    duration: { type: "NUMBER" },
+                                    accidental: { type: "STRING" }
+                                },
+                                required: ["note", "duration"]
+                            }
+                        }
+                    }
+                },
+                required: ["title", "keySignature", "timeSignature", "measures"]
+            }
+        };
+
         const requestBody = {
             contents: [{
                 parts: [
-                    { text: `
-                        Transcribe this sheet music to ABC Notation.
-                        
-                        CRITICAL INSTRUCTION: Add comments starting with '%' to explain your findings.
-                        
-                        1. KEY SIGNATURE: Count sharps (#) and flats (b) at the very beginning of the staff carefully.
-                           - If you see 1 sharp, write: % Detected 1 Sharp (G Major) -> K:G
-                           - If you see 4 sharps, write: % Detected 4 Sharps (E Major) -> K:E
-                        
-                        2. TIME SIGNATURE: Look for 4/4, C, 2/4, etc. Write it in M:.
-                        
-                        3. NOTES: Transcribe the melody. Use '2' for half notes, '4' for whole notes.
-                        
-                        OUTPUT FORMAT EXAMPLE:
-                        X:1
-                        % Detected Key: 1 Sharp
-                        K:G
-                        % Detected Time: 4/4
-                        M:4/4
-                        L:1/4
-                        c d e f | g2 g2 |
-                    `},
+                    { text: `Analyze this sheet music. Fill the data structure strictly.` },
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
             }],
@@ -66,7 +74,8 @@ export default async function handler(req, res) {
                 { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
                 { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
                 { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-            ]
+            ],
+            generationConfig: generationConfig // On applique le schéma ici
         };
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
@@ -79,12 +88,16 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
-        if (data.error) return res.status(500).json({ error: `Erreur Google (${modelName}) : ` + data.error.message });
+        if (data.error) return res.status(500).json({ error: `Erreur Google : ` + data.error.message });
         
         if (data.candidates && data.candidates[0].content) {
-            let abcCode = data.candidates[0].content.parts[0].text;
-            abcCode = abcCode.replace(/```abc/gi, "").replace(/```/g, "").trim();
-            return res.status(200).json({ abc: abcCode });
+            let jsonText = data.candidates[0].content.parts[0].text;
+            // Avec le schéma strict, le JSON est garanti d'être pur, mais on nettoie au cas où
+            jsonText = jsonText.replace(/```json/gi, "").replace(/```/g, "").trim();
+            
+            // On renvoie directement l'objet parsé
+            const parsed = JSON.parse(jsonText);
+            return res.status(200).json({ musicData: parsed });
         } else {
             return res.status(500).json({ error: "L'IA n'a pas trouvé de partition." });
         }
