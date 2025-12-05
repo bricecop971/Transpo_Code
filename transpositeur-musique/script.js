@@ -1,5 +1,5 @@
 // =========================================================
-//  SCRIPT.JS - VERSION JSON BUILDER (CONSTRUCTION FIABLE)
+//  SCRIPT.JS - VERSION ROBUSTE (ANTI-CRASH JSON)
 // =========================================================
 
 const fileInput = document.getElementById('partition-upload');
@@ -14,7 +14,7 @@ const metaTitle = document.getElementById('meta-title');
 const metaMeter = document.getElementById('meta-meter');
 const metaKey = document.getElementById('meta-key');
 
-// Variable globale pour stocker les données JSON de la musique
+// Variable globale
 let currentMusicData = null;
 
 // --- 1. OUTILS IMAGES ---
@@ -51,60 +51,58 @@ async function convertPdfToImage(pdfFile) {
     return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.7));
 }
 
-// --- 2. FONCTION DE CONVERSION JSON -> ABC (LE MOTEUR) ---
+// --- 2. FONCTION DE CONVERSION JSON -> ABC ---
 function buildABCFromData(data) {
-    // 1. En-têtes
+    // SÉCURITÉ : On vérifie que les données existent
+    if (!data) return "";
+
+    // 1. En-têtes (avec valeurs par défaut si manquant)
     let abc = `X:1\n`;
-    abc += `T:${data.title || "Sans Titre"}\n`;
+    abc += `T:${data.title || "Partition Sans Titre"}\n`;
     abc += `M:${data.timeSignature || "4/4"}\n`;
     abc += `K:${data.keySignature || "C"}\n`;
-    abc += `L:1/4\n`; // Unité de base = la noire (1.0)
+    abc += `L:1/4\n`; 
     abc += `%%staffwidth 1000\n`;
 
     // 2. Construction des notes
-    // On parcourt les mesures
     if (data.measures && Array.isArray(data.measures)) {
         data.measures.forEach(measure => {
-            measure.forEach(n => {
-                if (n.note === "rest") {
-                    abc += "z"; // z = silence en ABC
-                } else {
-                    // Gestion Accidentels (^ = dièse, _ = bémol)
-                    let acc = "";
-                    if (n.accidental === "#") acc = "^";
-                    if (n.accidental === "b") acc = "_";
-                    if (n.accidental === "n") acc = "=";
+            if (Array.isArray(measure)) {
+                measure.forEach(n => {
+                    if (n.note === "rest") {
+                        abc += "z"; 
+                    } else {
+                        // Gestion Accidentels
+                        let acc = "";
+                        if (n.accidental === "#") acc = "^";
+                        if (n.accidental === "b") acc = "_";
+                        if (n.accidental === "n") acc = "=";
 
-                    // Gestion Octave (ABC standard : C = Do grave, c = Do aigu)
-                    // Octave 4 = C D E... (Milieu)
-                    // Octave 5 = c d e... (Aigu)
-                    let noteName = n.note.toUpperCase();
-                    if (n.octave >= 5) noteName = noteName.toLowerCase();
-                    
-                    // Si octave très aigu (6), on ajoute '
-                    if (n.octave >= 6) noteName += "'";
-                    // Si octave très grave (3), on ajoute ,
-                    if (n.octave <= 3) noteName += ",";
+                        // Gestion Octave
+                        let noteName = (n.note || "C").toUpperCase();
+                        if (n.octave >= 5) noteName = noteName.toLowerCase();
+                        if (n.octave >= 6) noteName += "'";
+                        if (n.octave <= 3) noteName += ",";
 
-                    abc += acc + noteName;
-                }
+                        abc += acc + noteName;
+                    }
 
-                // Gestion Durée (ABC: C2 = blanche, C/2 = croche)
-                // Rappel : L:1/4 donc 1 = Noire
-                if (n.duration === 2) abc += "2";
-                else if (n.duration === 4) abc += "4";
-                else if (n.duration === 3) abc += "3";
-                else if (n.duration === 0.5) abc += "/2";
-                else if (n.duration === 0.25) abc += "/4";
-                else if (n.duration === 1.5) abc += "3/2"; // Noire pointée
+                    // Gestion Durée
+                    if (n.duration === 2) abc += "2";
+                    else if (n.duration === 4) abc += "4";
+                    else if (n.duration === 3) abc += "3";
+                    else if (n.duration === 0.5) abc += "/2";
+                    else if (n.duration === 0.25) abc += "/4";
+                    else if (n.duration === 1.5) abc += "3/2"; 
 
-                abc += " "; // Espace entre les notes
-            });
-            abc += "| "; // Barre de mesure
+                    abc += " "; 
+                });
+                abc += "| "; 
+            }
         });
     }
     
-    abc += "|]"; // Barre de fin
+    abc += "|]"; 
     return abc;
 }
 
@@ -138,7 +136,6 @@ fileInput.addEventListener('change', async function() {
 
         const base64 = await getBase64(imgFile);
         
-        // APPEL API
         const res = await fetch('/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -146,13 +143,25 @@ fileInput.addEventListener('change', async function() {
         });
 
         const responseData = await res.json();
+        
         if (responseData.error) throw new Error(responseData.error);
 
-        // SUCCÈS
-        currentMusicData = responseData.musicData; // On stocke le JSON brut
+        // --- CORRECTIF DU BUG "UNDEFINED" ---
+        // Parfois l'IA met les données direct dans musicData, parfois dans musicData.musicData
+        // On cherche le bon endroit.
+        let safeData = responseData.musicData;
+        
+        if (!safeData) {
+            // Si vide, c'est peut-être direct à la racine (rare) ou mal formaté
+            // On tente de voir si c'est responseData tout court
+            if (responseData.title) safeData = responseData;
+            else throw new Error("Format de données reçu invalide.");
+        }
 
-        // On pré-remplit le dashboard avec les données JSON
-        metaTitle.value = currentMusicData.title || "";
+        currentMusicData = safeData;
+
+        // Remplissage Dashboard (avec sécurité)
+        metaTitle.value = currentMusicData.title || "Sans Titre";
         metaMeter.value = currentMusicData.timeSignature || "4/4";
         metaKey.value = currentMusicData.keySignature || "C";
 
@@ -171,7 +180,7 @@ fileInput.addEventListener('change', async function() {
 transposeBtn.addEventListener('click', function() {
     if (!currentMusicData) { alert("Pas de données !"); return; }
 
-    // On met à jour les données avec ce que l'utilisateur a peut-être corrigé dans les cases
+    // Mise à jour avec les valeurs utilisateur
     currentMusicData.title = metaTitle.value;
     currentMusicData.timeSignature = metaMeter.value;
     currentMusicData.keySignature = metaKey.value;
@@ -184,13 +193,11 @@ transposeBtn.addEventListener('click', function() {
     if (instrumentKey === "Eb") visualTranspose = 9;
     if (instrumentKey === "F") visualTranspose = 7;
 
-    // On construit le code ABC à la volée à partir du JSON propre
     const abcCode = buildABCFromData(currentMusicData);
 
     document.getElementById('final-title').innerText = "Résultat : " + instrumentName;
     resultZone.style.display = "block";
 
-    // Rendu
     const visualObj = ABCJS.renderAbc("paper", abcCode, {
         responsive: "resize",
         visualTranspose: visualTranspose,
