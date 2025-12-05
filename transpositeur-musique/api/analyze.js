@@ -1,11 +1,6 @@
-// api/analyze.js
-// VERSION : SCHEMA STRICT (Anti-Hallucination)
-
 export const config = {
     api: {
-        bodyParser: {
-            sizeLimit: '4mb',
-        },
+        bodyParser: { sizeLimit: '4mb' },
     },
 };
 
@@ -17,55 +12,21 @@ export default async function handler(req, res) {
 
     try {
         const { image, mimeType } = req.body;
-        if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
+        if (!image) return res.status(400).json({ error: 'Aucune image' });
 
-        // LISTE DES MODÈLES
-        const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
-        const listResp = await fetch(listUrl);
-        const listData = await listResp.json();
-        const models = listData.models || [];
-        
-        let chosenModel = models.find(m => m.name.includes("flash") && !m.name.includes("2.0") && m.supportedGenerationMethods.includes("generateContent"));
-        if (!chosenModel) chosenModel = models.find(m => m.name.includes("pro") && !m.name.includes("2.0"));
-        if (!chosenModel) chosenModel = models[0];
-
-        const modelName = chosenModel.name.replace("models/", "");
-
-        // --- DÉFINITION DU SCHÉMA JSON STRICT ---
-        // On explique à l'API exactement à quoi doit ressembler le JSON
-        const generationConfig = {
-            response_mime_type: "application/json",
-            response_schema: {
-                type: "OBJECT",
-                properties: {
-                    title: { type: "STRING" },
-                    keySignature: { type: "STRING" },
-                    timeSignature: { type: "STRING" },
-                    measures: {
-                        type: "ARRAY",
-                        items: {
-                            type: "ARRAY",
-                            items: {
-                                type: "OBJECT",
-                                properties: {
-                                    note: { type: "STRING" },
-                                    octave: { type: "INTEGER" },
-                                    duration: { type: "NUMBER" },
-                                    accidental: { type: "STRING" }
-                                },
-                                required: ["note", "duration"]
-                            }
-                        }
-                    }
-                },
-                required: ["title", "keySignature", "timeSignature", "measures"]
-            }
-        };
+        // On prend le modèle Flash 1.5 standard (le plus stable)
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
         const requestBody = {
             contents: [{
                 parts: [
-                    { text: `Analyze this sheet music. Fill the data structure strictly.` },
+                    { text: `
+                        Transcribe this sheet music to ABC Notation.
+                        RULES:
+                        1. HEADER: You MUST include M: (Time Signature), L: (Unit Length), K: (Key Signature).
+                        2. RHYTHM: This is CRITICAL. If you see a half note, use '2'. If a dotted quarter, use '3/2'. Ensure bar lines | matches the time signature.
+                        3. OUTPUT: Return ONLY the ABC code starting with X:1. No markdown.
+                    `},
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
             }],
@@ -74,11 +35,8 @@ export default async function handler(req, res) {
                 { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
                 { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
                 { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-            ],
-            generationConfig: generationConfig // On applique le schéma ici
+            ]
         };
-
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
         const response = await fetch(url, {
             method: 'POST',
@@ -88,18 +46,15 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
-        if (data.error) return res.status(500).json({ error: `Erreur Google : ` + data.error.message });
+        if (data.error) return res.status(500).json({ error: "Erreur Google : " + data.error.message });
         
         if (data.candidates && data.candidates[0].content) {
-            let jsonText = data.candidates[0].content.parts[0].text;
-            // Avec le schéma strict, le JSON est garanti d'être pur, mais on nettoie au cas où
-            jsonText = jsonText.replace(/```json/gi, "").replace(/```/g, "").trim();
-            
-            // On renvoie directement l'objet parsé
-            const parsed = JSON.parse(jsonText);
-            return res.status(200).json({ musicData: parsed });
+            let abcCode = data.candidates[0].content.parts[0].text;
+            // Nettoyage strict
+            abcCode = abcCode.replace(/```abc/gi, "").replace(/```/g, "").trim();
+            return res.status(200).json({ abc: abcCode });
         } else {
-            return res.status(500).json({ error: "L'IA n'a pas trouvé de partition." });
+            return res.status(500).json({ error: "L'IA n'a pas pu lire la partition." });
         }
 
     } catch (error) {
