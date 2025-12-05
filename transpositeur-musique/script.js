@@ -1,21 +1,21 @@
 // =========================================================
-//  SCRIPT.JS - VERSION BLINDÉE (SÉCURITÉ HTML)
+//  SCRIPT.JS - VERSION SYNCHRO (IMAGE + AUDIO)
 // =========================================================
 
-// Sélections HTML
 const fileInput = document.getElementById('partition-upload');
-const uploadZone = document.querySelector('.upload-zone');
-const uploadText = document.querySelector('#upload-text') || document.querySelector('.upload-zone p');
+const uploadText = document.getElementById('upload-text');
 const transposeBtn = document.getElementById('transpose-btn');
 const resultZone = document.getElementById('result-zone');
 const dashboard = document.getElementById('dashboard');
 
-// Champs Dashboard (Avec sécurité si null)
+// Dashboard
 const metaTitle = document.getElementById('meta-title');
 const metaMeter = document.getElementById('meta-meter');
 const metaKey = document.getElementById('meta-key');
+const abcSource = document.getElementById('abc-source');
 
-let currentMusicData = null;
+// Variable globale pour le code ABC original (sans notes)
+let originalMusicBody = ""; 
 
 // --- OUTILS ---
 function getBase64(file) {
@@ -51,137 +51,109 @@ async function convertPdfToImage(pdfFile) {
     return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.7));
 }
 
-function buildABCFromData(data) {
-    if (!data) return "";
-    let abc = `X:1\nT:${data.title || "Sans Titre"}\nM:${data.timeSignature || "4/4"}\nK:${data.keySignature || "C"}\nL:1/4\n%%staffwidth 800\n`;
+// --- PARSING ABC ---
+function parseABC(abcCode) {
+    // 1. On extrait les infos
+    const T = abcCode.match(/^T:(.*)$/m);
+    const M = abcCode.match(/^M:(.*)$/m);
+    const K = abcCode.match(/^K:(.*)$/m);
     
-    if (data.measures && Array.isArray(data.measures)) {
-        data.measures.forEach(measure => {
-            measure.forEach(n => {
-                if (n.note === "rest") abc += "z"; 
-                else {
-                    let acc = n.accidental === "#" ? "^" : n.accidental === "b" ? "_" : n.accidental === "n" ? "=" : "";
-                    let note = n.note.toUpperCase();
-                    if (n.octave >= 5) note = note.toLowerCase();
-                    if (n.octave >= 6) note += "'";
-                    if (n.octave <= 3) note += ",";
-                    abc += acc + note;
-                }
-                if (n.duration === 2) abc += "2";
-                else if (n.duration === 4) abc += "4";
-                else if (n.duration === 3) abc += "3";
-                else if (n.duration === 0.5) abc += "/2";
-                else if (n.duration === 0.25) abc += "/4";
-                else if (n.duration === 1.5) abc += "3/2"; 
-                abc += " "; 
-            });
-            abc += "| "; 
+    // 2. On remplit le dashboard
+    metaTitle.value = T ? T[1].trim() : "Morceau IA";
+    metaMeter.value = M ? M[1].trim() : "4/4";
+    metaKey.value = K ? K[1].trim() : "C";
+
+    // 3. On extrait juste les notes (on enlève les headers pour les reconstruire proprement après)
+    const lines = abcCode.split('\n');
+    const musicLines = lines.filter(line => !/^[A-Z]:/.test(line));
+    originalMusicBody = musicLines.join('\n');
+}
+
+// --- CHARGEMENT ---
+fileInput.addEventListener('change', async function() {
+    if (!fileInput.files.length) return;
+    const file = fileInput.files[0];
+    let imgFile = file;
+
+    uploadText.innerHTML = `<strong>Analyse en cours...</strong>`;
+    
+    try {
+        if (file.type === 'application/pdf') {
+            const blob = await convertPdfToImage(file);
+            imgFile = new File([blob], "temp.jpg");
+        } else {
+            imgFile = await compressImage(file);
+        }
+
+        const base64 = await getBase64(imgFile);
+        const res = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64, mimeType: 'image/jpeg' })
         });
+
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        // SUCCÈS
+        parseABC(data.abc);
+        dashboard.style.display = "block";
+        uploadText.innerHTML = `✅ Analyse terminée. Vérifiez la tonalité (K) ci-dessous.`;
+
+    } catch (e) {
+        uploadText.innerHTML = `❌ Erreur : ${e.message}`;
+        console.error(e);
     }
-    abc += "|]"; 
-    return abc;
-}
+});
 
-// --- LOGIQUE PRINCIPALE ---
-if (fileInput) {
-    fileInput.addEventListener('change', async function() {
-        if (!fileInput.files.length) return;
-        
-        if (uploadText) uploadText.innerHTML = `<strong>Analyse IA...</strong><br>Extraction des données 🧠`;
-        if (uploadZone) uploadZone.style.borderColor = "#00e5ff";
+// --- TRANSPOSITION ---
+transposeBtn.addEventListener('click', function() {
+    if (!originalMusicBody) { alert("Chargez une partition !"); return; }
 
-        try {
-            let file = fileInput.files[0];
-            let imgFile;
+    const keySelect = document.getElementById('transposition');
+    const instrumentKey = keySelect.value;
+    
+    // Calcul transposition (Demi-tons)
+    let transposeSemitones = 0;
+    if (instrumentKey === "Bb") transposeSemitones = 2; // +2
+    if (instrumentKey === "Eb") transposeSemitones = 9; // +9
+    if (instrumentKey === "F") transposeSemitones = 7;  // +7
 
-            if (file.type === 'application/pdf') {
-                const blob = await convertPdfToImage(file);
-                imgFile = new File([blob], "temp.jpg");
-                if (uploadZone) uploadZone.style.background = "rgba(0,229,255,0.1)";
-            } else {
-                imgFile = await compressImage(file);
-                const reader = new FileReader();
-                reader.onload = e => {
-                    if (uploadZone) {
-                        uploadZone.style.backgroundImage = `url(${e.target.result})`;
-                        uploadZone.style.backgroundSize = "contain";
-                        uploadZone.style.backgroundRepeat = "no-repeat";
-                        uploadZone.style.backgroundPosition = "center";
-                    }
-                };
-                reader.readAsDataURL(file);
-            }
+    // 1. On reconstruit le ABC complet
+    const finalABC = `
+X:1
+T:${metaTitle.value}
+M:${metaMeter.value}
+K:${metaKey.value}
+L:1/4
+%%staffwidth 800
+${originalMusicBody}
+|]`;
 
-            const base64 = await getBase64(imgFile);
-            const res = await fetch('/api/analyze', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: base64, mimeType: 'image/jpeg' })
-            });
+    document.getElementById('final-title').innerText = "Résultat : " + keySelect.options[keySelect.selectedIndex].text;
+    resultZone.style.display = "block";
 
-            const responseData = await res.json();
-            if (responseData.error) throw new Error(responseData.error);
-
-            let safeData = responseData.musicData;
-            if (!safeData && responseData.title) safeData = responseData;
-            if (!safeData) throw new Error("Format JSON invalide");
-
-            currentMusicData = safeData;
-
-            // SÉCURITÉ : On ne remplit que si les éléments existent dans le HTML
-            if (metaTitle) metaTitle.value = currentMusicData.title || "";
-            if (metaMeter) metaMeter.value = currentMusicData.timeSignature || "4/4";
-            if (metaKey) metaKey.value = currentMusicData.keySignature || "C";
-
-            if (uploadText) uploadText.innerHTML = `<strong>Terminé !</strong><br>Vérifiez les infos ci-dessous.<br><button onclick="window.location.reload()" style="background:#333;color:white;border:none;padding:5px;margin-top:5px;cursor:pointer">❌ Changer</button>`;
-            if (uploadZone) uploadZone.style.borderColor = "#00ff00";
-            if (dashboard) dashboard.style.display = "grid";
-
-        } catch (e) {
-            if (uploadText) uploadText.innerHTML = `Erreur : ${e.message} <br><button onclick="window.location.reload()">Réessayer</button>`;
-            if (uploadZone) uploadZone.style.borderColor = "red";
-            console.error(e);
-        }
+    // 2. RENDU VISUEL (Avec transposition visuelle)
+    const visualObj = ABCJS.renderAbc("paper", finalABC, {
+        responsive: "resize",
+        visualTranspose: transposeSemitones // Décale les notes sur la portée
     });
-}
 
-if (transposeBtn) {
-    transposeBtn.addEventListener('click', function() {
-        if (!currentMusicData) { alert("Aucune donnée chargée !"); return; }
-
-        // Mise à jour depuis le dashboard (avec sécurité)
-        if (metaTitle) currentMusicData.title = metaTitle.value;
-        if (metaMeter) currentMusicData.timeSignature = metaMeter.value;
-        if (metaKey) currentMusicData.keySignature = metaKey.value;
-
-        const instrumentKey = document.getElementById('transposition').value;
-        const instrumentName = document.getElementById('transposition').options[document.getElementById('transposition').selectedIndex].text;
+    // 3. RENDU AUDIO (Avec transposition sonore !)
+    if (ABCJS.synth.supportsAudio()) {
+        const synth = new ABCJS.synth.SynthController();
+        synth.load("#audio", null, { displayLoop: true, displayRestart: true, displayPlay: true, displayProgress: true, displayWarp: true });
         
-        let visualTranspose = 0;
-        if (instrumentKey === "Bb") visualTranspose = 2;
-        if (instrumentKey === "Eb") visualTranspose = 9;
-        if (instrumentKey === "F") visualTranspose = 7;
-
-        const abcCode = buildABCFromData(currentMusicData);
-
-        const titleEl = document.getElementById('final-title');
-        if (titleEl) titleEl.innerText = "Résultat : " + instrumentName;
+        const createSynth = new ABCJS.synth.CreateSynth();
         
-        if (resultZone) resultZone.style.display = "block";
-
-        const visualObj = ABCJS.renderAbc("paper", abcCode, {
-            responsive: "resize",
-            visualTranspose: visualTranspose,
-            add_classes: true
-        });
-
-        if (ABCJS.synth.supportsAudio()) {
-            const synth = new ABCJS.synth.SynthController();
-            synth.load("#audio", null, { displayLoop: true, displayRestart: true, displayPlay: true, displayProgress: true, displayWarp: true });
-            const createSynth = new ABCJS.synth.CreateSynth();
-            createSynth.init({ visualObj: visualObj[0] }).then(() => synth.setTune(visualObj[0], false));
-        }
-        
-        if (resultZone) resultZone.scrollIntoView({behavior: "smooth"});
-    });
-}
+        // C'EST ICI LA CLÉ : on dit au synthé de décaler le son aussi !
+        createSynth.init({ 
+            visualObj: visualObj[0],
+            options: { 
+                midiTranspose: transposeSemitones // Synchronise le son avec l'image
+            } 
+        }).then(() => synth.setTune(visualObj[0], false));
+    }
+    
+    resultZone.scrollIntoView({behavior: "smooth"});
+});
