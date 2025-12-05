@@ -3,88 +3,104 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transpositeur IA Pro</title>
+    <title>Transpositeur IA</title>
     <link rel="stylesheet" href="style.css">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-audio.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
 
     <style>
-        .abcjs-css-warning { display: none !important; }
+        /* CORRECTIF VISUEL OBLIGATOIRE */
+        body { background-color: #121212; color: #e0e0e0; font-family: sans-serif; text-align: center; }
         
-        .upload-zone { margin: 20px auto; padding: 40px; border: 2px dashed #00e5ff; border-radius: 10px; width: 80%; background: rgba(0, 229, 255, 0.05); color: white; text-align: center; cursor: pointer; }
-        
-        /* STYLE DU DASHBOARD (Les cases que le JS cherche !) */
-        .dashboard {
-            display: none; /* Caché au début */
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 10px;
+        /* 1. La feuille de partition DOIT être blanche */
+        #paper {
+            background-color: white !important;
+            color: black !important;
+            padding: 15px;
             margin: 20px auto;
-            width: 80%;
+            width: 90%;
+            border-radius: 5px;
+            overflow-x: auto;
         }
-        .dash-card {
-            background: #222;
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid #444;
-            text-align: left;
-        }
-        .dash-card label { display: block; font-size: 11px; color: #888; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
-        .dash-card input { width: 100%; background: transparent; border: none; color: #00e5ff; font-weight: bold; font-size: 16px; outline: none; }
+        #paper svg { width: 100% !important; }
+        /* Force la couleur noire pour l'impression et l'écran */
+        #paper svg path { fill: #000000 !important; stroke: #000000 !important; }
 
-        /* Lecteur Audio */
-        .abcjs-inline-audio { background: #222; border: 1px solid #444; border-radius: 6px; margin-top: 10px; padding: 5px; display: flex; justify-content: center; }
-        .abcjs-btn { background: #00e5ff; color: #000; border-radius: 4px; padding: 2px 8px; margin: 0 5px; cursor: pointer; border: none; }
+        /* 2. Les boutons DOIVENT être lisibles */
+        button {
+            background-color: #333;
+            color: white;
+            border: 1px solid #555;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover { background-color: #555; }
+        
+        /* Le bouton principal */
+        #transpose-btn {
+            background-color: #00e5ff;
+            color: #000; /* Texte noir sur bleu */
+            border: none;
+            font-weight: bold;
+            font-size: 16px;
+            padding: 15px 30px;
+            margin-top: 20px;
+        }
+
+        /* 3. Dashboard lisible */
+        .dash-card { background: #222; border: 1px solid #444; padding: 10px; border-radius: 8px; text-align: left; }
+        .dash-card label { display: block; font-size: 11px; color: #aaa; margin-bottom: 5px; }
+        .dash-card input { width: 100%; background: transparent; border: none; color: #00e5ff; font-weight: bold; font-size: 16px; outline: none; }
+        
+        /* 4. Lecteur Audio */
+        .abcjs-inline-audio { background: #222; border: 1px solid #00e5ff; border-radius: 5px; padding: 5px; margin-top: 10px; display: flex; justify-content: center; }
+        .abcjs-btn { background: #00e5ff !important; color: black !important; padding: 2px 8px; border-radius: 3px; border: none; margin: 0 2px; }
+        .abcjs-midi-progress-background { background: #444; border: 1px solid #555; }
+        .abcjs-midi-progress-indicator { background: #00e5ff; }
     </style>
 </head>
-<body style="background:#121212; color:white; font-family:sans-serif; text-align:center;">
+<body>
 
-    <header style="margin-top:20px;">
-        <h1>🎼 Smart Transpose</h1>
-    </header>
+    <header><h1>🎼 Transpositeur IA</h1></header>
 
     <main>
-        <div class="upload-zone">
-            <p id="upload-text">📸 Déposez votre partition (Image/PDF)</p>
-            <input type="file" id="partition-upload" accept="image/*,.pdf" style="display:none;">
-            <button onclick="document.getElementById('partition-upload').click()" style="margin-top:10px; padding:10px 20px; background:#00e5ff; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">Choisir un fichier</button>
+        <div class="upload-zone" style="border: 2px dashed #00e5ff; padding: 30px; margin: 20px auto; width: 80%; background: rgba(0,229,255,0.05);">
+            <p id="upload-text">📸 Chargez votre partition</p>
+            <input type="file" id="partition-upload" accept="image/*,.pdf">
         </div>
 
-        <div id="dashboard" class="dashboard">
-            <div class="dash-card">
-                <label>TITRE</label>
-                <input type="text" id="meta-title" placeholder="Inconnu">
+        <div id="dashboard" style="display:none; margin: 20px auto; width: 80%;">
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px;">
+                <div class="dash-card"><label>TITRE</label><input type="text" id="meta-title"></div>
+                <div class="dash-card"><label>MESURE</label><input type="text" id="meta-meter"></div>
+                <div class="dash-card"><label>TONALITÉ</label><input type="text" id="meta-key"></div>
             </div>
-            <div class="dash-card">
-                <label>MESURE</label>
-                <input type="text" id="meta-meter" placeholder="4/4">
-            </div>
-            <div class="dash-card">
-                <label>TONALITÉ</label>
-                <input type="text" id="meta-key" placeholder="C">
-            </div>
+            <textarea id="abc-source" style="display:none;"></textarea>
         </div>
 
         <div class="options-container" style="margin: 20px;">
             <label>Transposer vers : </label>
-            <select id="transposition" style="padding:10px; border-radius:5px; background:#333; color:white; border:1px solid #555;">
+            <select id="transposition" style="padding:10px; border-radius:5px; background:#333; color:white;">
                 <option value="Eb">Saxophone Alto (Mi bémol)</option>
-                <option value="Bb">Trompette / Clarinette (Si bémol)</option>
+                <option value="Bb">Trompette (Si bémol)</option>
                 <option value="F">Cor (Fa)</option>
-                <option value="C" selected>Piano / Flûte (Original)</option>
+                <option value="C" selected>Piano / Flûte</option>
             </select>
         </div>
 
-        <button id="transpose-btn" style="padding:15px 30px; font-size:18px; background:#00e5ff; border:none; border-radius:30px; cursor:pointer; font-weight:bold; box-shadow: 0 0 15px rgba(0,229,255,0.4);">✨ Transposer maintenant</button>
+        <button id="transpose-btn">✨ Transposer</button>
 
         <div id="result-zone" style="display:none; margin-top:30px;">
             <h2 id="final-title">Résultat</h2>
             <div id="audio"></div>
-            <div id="paper" style="background:white; padding:10px; margin:20px auto; width:90%; overflow-x:auto; border-radius:5px;"></div>
-            <button onclick="window.print()" style="padding:10px 20px; background:#333; color:white; border:none; border-radius:5px; cursor:pointer;">🖨️ Imprimer / PDF</button>
-            <button onclick="window.location.reload()" style="padding:10px 20px; background:#d32f2f; color:white; border:none; border-radius:5px; cursor:pointer; margin-left:10px;">🔄 Nouveau</button>
+            <div id="paper"></div>
+            <button onclick="window.print()">🖨️ Imprimer</button>
+            <button onclick="window.location.reload()">🔄 Nouveau</button>
         </div>
     </main>
 
