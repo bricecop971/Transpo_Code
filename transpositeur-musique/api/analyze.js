@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : ASSISTÉE ET STABILISÉE (Le Prompt utilise la donnée utilisateur)
+// VERSION : MATHÉMATIQUE STRICTE & BARRES DE MESURE
 
 export const config = {
     api: {
@@ -14,47 +14,53 @@ export default async function handler(req, res) {
     if (!apiKey) return res.status(500).json({ error: 'Clé API manquante' });
 
     try {
-        // On récupère le nouveau paramètre 'meter'
         const { image, mimeType, meter } = req.body;
-        
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        // On utilise la signature de temps fournie, ou 4/4 par défaut (pour la sécurité)
+        // On impose la mesure choisie par l'utilisateur
         const userMeter = meter || "4/4";
 
-        // Détection du modèle (Pour utiliser le plus rapide : Flash)
+        // Détection du modèle
         const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
         const listResp = await fetch(listUrl);
         const listData = await listResp.json();
         const models = listData.models || [];
         
+        // On cherche Flash ou Pro (hors 2.0 exp)
         let chosenModel = models.find(m => m.name.includes("flash") && !m.name.includes("2.0") && m.supportedGenerationMethods.includes("generateContent"));
         if (!chosenModel) chosenModel = models.find(m => m.name.includes("pro") && !m.name.includes("2.0"));
         if (!chosenModel) chosenModel = models[0];
 
         const modelName = chosenModel.name.replace("models/", "");
 
-
-        // --- PROMPT FINAL COMPACTÉ ---
+        // --- PROMPT MATHÉMATIQUE ---
         const promptText = `
-            Transcribe the attached sheet music image into valid ABC Notation.
+            Act as a strict Music Transcription Engine.
+            
+            INPUT CONSTRAINTS:
+            - The Time Signature is FORCED to be: M:${userMeter}
+            - Do not detect the meter. USE M:${userMeter}.
 
-            ***INSTRUCTION CRITIQUE***: The user has explicitly set the Time Signature. You MUST use M:${userMeter} in the header.
+            TASK:
+            Transcribe the notes into ABC Notation.
+            
+            MATHEMATICAL RULES (CRITICAL):
+            1. **Bar Lines (|)**: You MUST identify every vertical bar line in the image.
+            2. **Sum Check**: The sum of note durations inside every measure (between two |) MUST equal ${userMeter}.
+               - If M:2/4, sum = 2 (e.g. C C | or C2 | or C/2 C/2 C |).
+               - If M:4/4, sum = 4.
+            3. **Note Values**:
+               - Half Note (Blanche) = Note + '2' (e.g. C2)
+               - Quarter Note (Noire) = Note (e.g. C)
+               - Eighth Note (Croche) = Note + '/2' (e.g. C/2)
+               - Dotted Quarter = Note + '3/2' (e.g. C3/2)
+               - Whole Note (Ronde) = Note + '4' (e.g. C4)
 
-            STRICT RHYTHM MAPPING: Use these rules based on visual note shapes to determine duration:
-            - Half Note (Blanche / Hollow Head): Add '2' (e.g., C2).
-            - Quarter Note (Noire / Solid Head): Write the note letter only (e.g., C).
-            - Eighth Note (Croche / Flag or Beam): Add '/2' (e.g., C/2).
-            - Dotted Notes: Use '3/2' or '3'.
-
-            STRICT HEADERS:
-            - You MUST include K: (Key Signature).
-            - You MUST use the provided Time Signature: M:${userMeter}.
-            - The sum of note durations in each bar MUST mathematically equal the measure M:${userMeter}.
-
-            OUTPUT FORMAT: Return ONLY the ABC code starting with X:1. No markdown, no explanations.
+            OUTPUT:
+            Return ONLY the valid ABC code starting with X:1.
+            Include K: (Detect Key Signature) and M:${userMeter}.
         `;
-        
+
         const requestBody = {
             contents: [{
                 parts: [
@@ -85,9 +91,9 @@ export default async function handler(req, res) {
         if (data.candidates && data.candidates[0].content) {
             let abcCode = data.candidates[0].content.parts[0].text;
             abcCode = abcCode.replace(/```abc/gi, "").replace(/```/g, "").trim();
-            // Sécurité: Si l'IA n'a pas mis le bon M:, on le corrige de force avant de renvoyer le code.
-            let fixedAbcCode = abcCode.replace(/^M:(.*)$/m, `M:${userMeter}`);
-            return res.status(200).json({ abc: fixedAbcCode });
+            // Double sécurité : on force le M: dans le code retourné
+            abcCode = abcCode.replace(/^M:.*$/m, `M:${userMeter}`);
+            return res.status(200).json({ abc: abcCode });
         } else {
             return res.status(500).json({ error: "L'IA n'a pas trouvé de code ABC." });
         }
