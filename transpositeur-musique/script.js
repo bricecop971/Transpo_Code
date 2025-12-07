@@ -1,12 +1,14 @@
-// SCRIPT.JS - MODE INSPECTION
+// SCRIPT.JS - VERSION DIAGNOSTIC RAPIDE
 
-const fileInput = document.getElementById('file-input');
-const statusText = document.getElementById('status-text');
-const inspector = document.getElementById('inspector');
-const abcEditor = document.getElementById('abc-editor');
-const refreshBtn = document.getElementById('refresh-btn');
+const fileInput = document.getElementById('partition-upload');
+const uploadZone = document.querySelector('.upload-zone');
+const uploadText = document.getElementById('upload-text') || document.querySelector('p');
+const transposeBtn = document.getElementById('transpose-btn');
+const resultZone = document.getElementById('result-zone');
 
-// --- OUTILS IMAGE ---
+let originalAbcString = "";
+
+// Outils
 function getBase64(file) {
     return new Promise((r, j) => {
         const reader = new FileReader();
@@ -16,6 +18,7 @@ function getBase64(file) {
     });
 }
 
+// Fonction simple pour compresser (évite les erreurs de taille)
 async function compressImage(file) {
     const bitmap = await createImageBitmap(file);
     const canvas = document.createElement('canvas');
@@ -27,51 +30,19 @@ async function compressImage(file) {
     return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.6));
 }
 
-async function convertPdfToImage(pdfFile) {
-    const arrayBuffer = await pdfFile.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-    const page = await pdf.getPage(1);
-    const viewport = page.getViewport({ scale: 1.5 });
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
-    await page.render({ canvasContext: context, viewport: viewport }).promise;
-    return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.7));
-}
-
-// --- FONCTION D'AFFICHAGE ---
-function renderABC() {
-    const code = abcEditor.value;
-    // On dessine simplement ce qu'il y a dans la zone de texte
-    ABCJS.renderAbc("paper", code, {
-        responsive: "resize",
-        staffwidth: 800
-    });
-}
-
-// --- CHARGEMENT ---
+// 1. CHARGEMENT
 fileInput.addEventListener('change', async function() {
     if (!fileInput.files.length) return;
     
-    statusText.innerHTML = `⏳ Analyse de l'image en cours...`;
-    inspector.style.display = "none";
+    uploadText.innerHTML = "Analyse rythmique en cours...";
+    if (uploadZone) uploadZone.style.borderColor = "blue";
 
     try {
         let file = fileInput.files[0];
-        let imgFile;
+        // On compresse toujours pour être sûr
+        const compressedFile = await compressImage(file);
+        const base64 = await getBase64(compressedFile);
 
-        // Préparation fichier
-        if (file.type === 'application/pdf') {
-            const blob = await convertPdfToImage(file);
-            imgFile = new File([blob], "temp.jpg");
-        } else {
-            imgFile = await compressImage(file);
-        }
-
-        const base64 = await getBase64(imgFile);
-
-        // Appel API
         const res = await fetch('/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -81,19 +52,37 @@ fileInput.addEventListener('change', async function() {
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
-        // SUCCÈS : On affiche le code brut
-        abcEditor.value = data.abc || "Erreur: Pas de code ABC reçu.";
+        originalAbcString = data.abc;
         
-        inspector.style.display = "block";
-        statusText.innerHTML = `✅ Analyse terminée. Vérifiez le résultat ci-dessous.`;
-        
-        renderABC(); // Premier dessin
+        // AFFICHAGE DEBUG
+        console.log("Code ABC reçu :", originalAbcString);
+        alert("Code reçu ! Vérifiez s'il y a des chiffres (ex: C2, G/2) :\n" + originalAbcString.substring(0, 100) + "...");
+
+        uploadText.innerHTML = "Analyse terminée ! Cliquez sur Transposer.";
+        if (uploadZone) uploadZone.style.borderColor = "green";
 
     } catch (e) {
-        statusText.innerHTML = `❌ Erreur : ${e.message}`;
-        console.error(e);
+        alert("Erreur: " + e.message);
     }
 });
 
-// Bouton pour redessiner si l'utilisateur corrige le code
-refreshBtn.addEventListener('click', renderABC);
+// 2. TRANSPOSITION
+if (transposeBtn) {
+    transposeBtn.addEventListener('click', function() {
+        if (!originalAbcString) { alert("Chargez une image !"); return; }
+        
+        const instrumentKey = document.getElementById('transposition').value;
+        let visualTranspose = 0;
+        if (instrumentKey === "Bb") visualTranspose = 2;
+        if (instrumentKey === "Eb") visualTranspose = 9;
+        if (instrumentKey === "F") visualTranspose = 7;
+
+        if (resultZone) resultZone.style.display = "block";
+
+        ABCJS.renderAbc("paper", originalAbcString, {
+            responsive: "resize",
+            visualTranspose: visualTranspose,
+            staffwidth: 800
+        });
+    });
+}
