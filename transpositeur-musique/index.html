@@ -27,6 +27,19 @@
             <div style="display:flex; gap:20px; justify-content:center;">
                 <div style="width:45%; text-align:left;">
                     <h3>Code ABC (Détecté par l'IA)</h3>
+                    <div id="inspector" style="display:none; margin-top:20px;">
+    <div style="margin-bottom: 15px; text-align: left; width: 45%; margin: 0 auto 15px 25%;">
+        <label for="meter-select" style="color: #00e5ff; font-weight: bold; display: block; margin-bottom: 5px;">Signature de Temps (M:)</label>
+        <select id="meter-select" style="padding: 10px; border-radius: 5px; background: #333; color: white; border: 1px solid #555;">
+            <option value="4/4" selected>4/4 (Quatre temps)</option>
+            <option value="2/4">2/4 (Deux temps)</option>
+            <option value="3/4">3/4 (Trois temps)</option>
+            <option value="6/8">6/8 (Six-huitième)</option>
+            <option value="C">C (C barré)</option>
+        </select>
+    </div>
+    
+    <div style="display:flex; gap:20px; justify-content:center;">
                     <p style="font-size:12px; color:#aaa;">Vous pouvez corriger ce texte manuellement !</p>
                     <textarea id="abc-editor" style="width:100%; height:300px; background:#222; color:#0f0; font-family:monospace; padding:10px; border:1px solid #555;"></textarea>
                     <button id="refresh-btn" style="width:100%; margin-top:10px; padding:10px; background:#00e5ff; border:none; cursor:pointer; font-weight:bold;">🔄 Mettre à jour le visuel</button>
@@ -53,3 +66,4 @@
     <script src="script.js"></script>
 </body>
 </html>
+
