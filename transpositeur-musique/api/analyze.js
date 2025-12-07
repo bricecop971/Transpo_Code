@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : PROMPT COMPACT & STABILISÉ (Anti-Timeout)
+// VERSION : ASSISTÉE ET STABILISÉE (Le Prompt utilise la donnée utilisateur)
 
 export const config = {
     api: {
@@ -14,10 +14,15 @@ export default async function handler(req, res) {
     if (!apiKey) return res.status(500).json({ error: 'Clé API manquante' });
 
     try {
-        const { image, mimeType } = req.body;
+        // On récupère le nouveau paramètre 'meter'
+        const { image, mimeType, meter } = req.body;
+        
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        // On cherche le meilleur modèle disponible (Flash est rapide)
+        // On utilise la signature de temps fournie, ou 4/4 par défaut (pour la sécurité)
+        const userMeter = meter || "4/4";
+
+        // Détection du modèle (Pour utiliser le plus rapide : Flash)
         const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
         const listResp = await fetch(listUrl);
         const listData = await listResp.json();
@@ -29,21 +34,27 @@ export default async function handler(req, res) {
 
         const modelName = chosenModel.name.replace("models/", "");
 
-        // --- PROMPT COMPACTÉ ---
+
+        // --- PROMPT FINAL COMPACTÉ ---
         const promptText = `
             Transcribe the attached sheet music image into valid ABC Notation.
 
-            STRICT RHYTHM MAPPING: Use these rules based on visual note shapes:
+            ***INSTRUCTION CRITIQUE***: The user has explicitly set the Time Signature. You MUST use M:${userMeter} in the header.
+
+            STRICT RHYTHM MAPPING: Use these rules based on visual note shapes to determine duration:
             - Half Note (Blanche / Hollow Head): Add '2' (e.g., C2).
             - Quarter Note (Noire / Solid Head): Write the note letter only (e.g., C).
             - Eighth Note (Croche / Flag or Beam): Add '/2' (e.g., C/2).
             - Dotted Notes: Use '3/2' or '3'.
 
-            STRICT HEADERS: You MUST accurately identify and include K: (Key) and M: (Time Signature).
+            STRICT HEADERS:
+            - You MUST include K: (Key Signature).
+            - You MUST use the provided Time Signature: M:${userMeter}.
+            - The sum of note durations in each bar MUST mathematically equal the measure M:${userMeter}.
 
             OUTPUT FORMAT: Return ONLY the ABC code starting with X:1. No markdown, no explanations.
         `;
-
+        
         const requestBody = {
             contents: [{
                 parts: [
@@ -74,7 +85,9 @@ export default async function handler(req, res) {
         if (data.candidates && data.candidates[0].content) {
             let abcCode = data.candidates[0].content.parts[0].text;
             abcCode = abcCode.replace(/```abc/gi, "").replace(/```/g, "").trim();
-            return res.status(200).json({ abc: abcCode });
+            // Sécurité: Si l'IA n'a pas mis le bon M:, on le corrige de force avant de renvoyer le code.
+            let fixedAbcCode = abcCode.replace(/^M:(.*)$/m, `M:${userMeter}`);
+            return res.status(200).json({ abc: fixedAbcCode });
         } else {
             return res.status(500).json({ error: "L'IA n'a pas trouvé de code ABC." });
         }
