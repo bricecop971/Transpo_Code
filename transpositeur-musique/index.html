@@ -3,17 +3,52 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inspecteur de Partition IA</title>
-    <link rel="stylesheet" href="style.css">
+    <title>Inspecteur de Partition IA - Transposeur</title>
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
+
+    <style>
+        /* CSS OBLIGATOIRE POUR LA LISIBILITÉ */
+        body { background-color: #121212; color: #e0e0e0; font-family: sans-serif; text-align: center; }
+        
+        /* La feuille de partition DOIT être blanche */
+        #paper {
+            background-color: white !important;
+            color: black !important;
+            padding: 15px;
+            margin: 20px auto;
+            width: 90%;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        #paper svg { width: 100% !important; }
+        /* Force la couleur noire pour les notes */
+        #paper svg path { fill: #000000 !important; stroke: #000000 !important; }
+
+        /* Boutons lisibles */
+        button {
+            background-color: #333;
+            color: white;
+            border: 1px solid #555;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover { background-color: #555; }
+        
+        /* Zone de fichier */
+        .upload-zone { border: 2px dashed #00e5ff; padding: 30px; margin: 20px auto; width: 80%; background: rgba(0,229,255,0.05); }
+    </style>
 </head>
 <body>
 
     <header>
-        <h1>Étape 1 : Inspection</h1>
-        <p>Voyons exactement ce que l'IA détecte.</p>
+        <h1>Étape 1 : Inspection et Correction du Rythme</h1>
+        <p>Chargez la partition et indiquez la signature de temps.</p>
     </header>
 
     <main>
@@ -24,46 +59,53 @@
 
         <div id="inspector" style="display:none; margin-top:20px;">
             
+            <div style="margin-bottom: 15px; text-align: left; width: 45%; margin: 0 auto 15px 25%;">
+                <label for="meter-select" style="color: #00e5ff; font-weight: bold; display: block; margin-bottom: 5px;">Signature de Temps (M:)</label>
+                <select id="meter-select" style="padding: 10px; border-radius: 5px; background: #333; color: white; border: 1px solid #555;">
+                    <option value="4/4" selected>4/4 (Quatre temps)</option>
+                    <option value="2/4">2/4 (Deux temps)</option>
+                    <option value="3/4">3/4 (Trois temps)</option>
+                    <option value="6/8">6/8 (Six-huitième)</option>
+                    <option value="C">C (Commun)</option>
+                </select>
+            </div>
+            
             <div style="display:flex; gap:20px; justify-content:center;">
                 <div style="width:45%; text-align:left;">
-                    <h3>Code ABC (Détecté par l'IA)</h3>
-                    <div id="inspector" style="display:none; margin-top:20px;">
-    <div style="margin-bottom: 15px; text-align: left; width: 45%; margin: 0 auto 15px 25%;">
-        <label for="meter-select" style="color: #00e5ff; font-weight: bold; display: block; margin-bottom: 5px;">Signature de Temps (M:)</label>
-        <select id="meter-select" style="padding: 10px; border-radius: 5px; background: #333; color: white; border: 1px solid #555;">
-            <option value="4/4" selected>4/4 (Quatre temps)</option>
-            <option value="2/4">2/4 (Deux temps)</option>
-            <option value="3/4">3/4 (Trois temps)</option>
-            <option value="6/8">6/8 (Six-huitième)</option>
-            <option value="C">C (C barré)</option>
-        </select>
-    </div>
-    
-    <div style="display:flex; gap:20px; justify-content:center;">
-                    <p style="font-size:12px; color:#aaa;">Vous pouvez corriger ce texte manuellement !</p>
+                    <h3>Code ABC (Détecté)</h3>
+                    <p style="font-size:12px; color:#aaa;">Corrigez M: et les durées (ex: C2, C/2) ici si nécessaire.</p>
                     <textarea id="abc-editor" style="width:100%; height:300px; background:#222; color:#0f0; font-family:monospace; padding:10px; border:1px solid #555;"></textarea>
-                    <button id="refresh-btn" style="width:100%; margin-top:10px; padding:10px; background:#00e5ff; border:none; cursor:pointer; font-weight:bold;">🔄 Mettre à jour le visuel</button>
+                    
+                    <button id="refresh-btn" style="width:100%; margin-top:10px; padding:10px; background:#00e5ff; color:black; border:none; cursor:pointer; font-weight:bold;">🔄 Mettre à jour le visuel</button>
                 </div>
 
                 <div style="width:45%; background:white; color:black; padding:10px; border-radius:5px;">
-                    <h3 style="color:black; margin-top:0;">Résultat Visuel</h3>
+                    <h3 style="color:black; margin-top:0;">Résultat Visuel (Original)</h3>
                     <div id="paper"></div>
                 </div>
             </div>
 
             <div style="margin-top:30px; padding-top:20px; border-top:1px solid #333;">
-                <h3>Une fois validé, on transposera ici (Étape suivante)</h3>
-                <select id="instrument">
-                    <option value="Eb">Vers Saxo Alto (Eb)</option>
-                    <option value="Bb">Vers Trompette (Bb)</option>
+                <h3 id="transpose-title">Étape 2 : Transposer</h3>
+                <label for="instrument" style="margin-right: 15px;">Transposer vers : </label>
+                <select id="instrument" style="padding:10px; border-radius:5px; background:#333; color:white;">
+                    <option value="C" selected>Piano / Flûte (Ut)</option>
+                    <option value="Bb">Trompette / Clarinette (Si bémol)</option>
+                    <option value="Eb">Saxophone Alto (Mi bémol)</option>
+                    <option value="F">Cor (Fa)</option>
                 </select>
-                <button id="transpose-btn" style="background:#555; color:white; border:none; padding:10px 20px; cursor:not-allowed;">Transposer (Bientôt)</button>
+                <button id="transpose-btn" style="background:#555; color:white; border:none; padding:10px 20px; margin-left:15px;">✨ Transposer et Jouer</button>
+                
+                <div id="final-result-zone" style="display: none; margin-top: 20px;">
+                    <div id="audio-player"></div>
+                    <div id="transposed-paper" style="background:white; color:black; padding:10px; border-radius:5px; margin-top:15px;"></div>
+                    <button onclick="window.print()" style="margin-top:10px;">🖨️ Imprimer</button>
+                    <button onclick="window.location.reload()">🔄 Nouvelle partition</button>
+                </div>
             </div>
-
         </div>
     </main>
 
     <script src="script.js"></script>
 </body>
 </html>
-
