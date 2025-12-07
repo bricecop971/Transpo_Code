@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : MATHÉMATIQUE STRICTE & BARRES DE MESURE
+// VERSION : SÉCURITÉ RYTHMIQUE MAXIMALE
 
 export const config = {
     api: {
@@ -17,48 +17,41 @@ export default async function handler(req, res) {
         const { image, mimeType, meter } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        // On impose la mesure choisie par l'utilisateur
         const userMeter = meter || "4/4";
 
-        // Détection du modèle
+        // Détection du modèle (Flash est préféré pour la vitesse)
         const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
         const listResp = await fetch(listUrl);
         const listData = await listResp.json();
         const models = listData.models || [];
         
-        // On cherche Flash ou Pro (hors 2.0 exp)
         let chosenModel = models.find(m => m.name.includes("flash") && !m.name.includes("2.0") && m.supportedGenerationMethods.includes("generateContent"));
         if (!chosenModel) chosenModel = models.find(m => m.name.includes("pro") && !m.name.includes("2.0"));
         if (!chosenModel) chosenModel = models[0];
 
         const modelName = chosenModel.name.replace("models/", "");
 
-        // --- PROMPT MATHÉMATIQUE ---
+        // --- PROMPT MATHÉMATIQUE RENFORCÉ ---
         const promptText = `
-            Act as a strict Music Transcription Engine.
-            
-            INPUT CONSTRAINTS:
-            - The Time Signature is FORCED to be: M:${userMeter}
-            - Do not detect the meter. USE M:${userMeter}.
+            Agissez comme un Moteur de Transcription Musicale strict.
 
-            TASK:
-            Transcribe the notes into ABC Notation.
-            
-            MATHEMATICAL RULES (CRITICAL):
-            1. **Bar Lines (|)**: You MUST identify every vertical bar line in the image.
-            2. **Sum Check**: The sum of note durations inside every measure (between two |) MUST equal ${userMeter}.
-               - If M:2/4, sum = 2 (e.g. C C | or C2 | or C/2 C/2 C |).
-               - If M:4/4, sum = 4.
-            3. **Note Values**:
-               - Half Note (Blanche) = Note + '2' (e.g. C2)
-               - Quarter Note (Noire) = Note (e.g. C)
-               - Eighth Note (Croche) = Note + '/2' (e.g. C/2)
-               - Dotted Quarter = Note + '3/2' (e.g. C3/2)
-               - Whole Note (Ronde) = Note + '4' (e.g. C4)
+            RAPPEL CRITIQUE: La Signature de Temps est M:${userMeter}. Le total des durées entre chaque barre verticale (|) DOIT être égal à cette valeur.
 
-            OUTPUT:
-            Return ONLY the valid ABC code starting with X:1.
-            Include K: (Detect Key Signature) and M:${userMeter}.
+            TÂCHE: Transcrivez les hauteurs de notes et les rythmes en Notation ABC.
+
+            RÈGLES DE TRADUCTION RYTHMIQUE (STRICTES):
+            1. **Noire (Quarter Note / Tête Pleine SANS crochet):** Note seulement (Ex: C). Durée = 1/4.
+            2. **Blanche (Half Note / Tête Creuse):** Note + '2' (Ex: C2). Durée = 2/4.
+            3. **Croche (Eighth Note / Un seul crochet ou une seule ligature):** Note + '/2' (Ex: C/2). Durée = 1/8.
+            4. **Ronde (Whole Note):** Note + '4' (Ex: C4). Durée = 4/4.
+            5. **Notes Pointées:** Utiliser un '3' suivi de la durée (Ex: C3/2 pour une noire pointée, C/2 pour une croche pointée).
+            6. **Barres de Mesure (|):** Utilisez-les rigoureusement pour séparer chaque mesure, vérifiant que la somme des durées est correcte (égale à M:${userMeter}).
+
+            CONTRAINTE EXTRÊME: N'utilisez JAMAIS de double-croches (notation /4 ou //) sauf si vous êtes certain à 100% que la note a DEUX crochets. En cas de doute, utilisez TOUJOURS la notation de la Croche simple (/2).
+
+            SORTIE:
+            Retournez UNIQUEMENT le code ABC valide, commençant par X:1.
+            Incluez K: (Tonalité détectée) et M:${userMeter} (Mesure forcée).
         `;
 
         const requestBody = {
@@ -91,7 +84,7 @@ export default async function handler(req, res) {
         if (data.candidates && data.candidates[0].content) {
             let abcCode = data.candidates[0].content.parts[0].text;
             abcCode = abcCode.replace(/```abc/gi, "").replace(/```/g, "").trim();
-            // Double sécurité : on force le M: dans le code retourné
+            // Double sécurité: on force le M: dans le code retourné
             abcCode = abcCode.replace(/^M:.*$/m, `M:${userMeter}`);
             return res.status(200).json({ abc: abcCode });
         } else {
