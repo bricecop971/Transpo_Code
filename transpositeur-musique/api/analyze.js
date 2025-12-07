@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : APPROCHE KLANG.IO (EXTRACTION VISUELLE STRICTE)
+// VERSION : AUTO-DÉTECTION DU MODÈLE + SCANNER OPTIQUE
 
 export const config = {
     api: {
@@ -17,79 +17,90 @@ export default async function handler(req, res) {
         const { image, mimeType } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        // On utilise Flash 1.5 pour sa rapidité de traitement visuel
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        // --- 1. DÉCOUVERTE AUTOMATIQUE DU MODÈLE ---
+        // On demande à Google : "Quels modèles sont dispos pour cette clé ?"
+        const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+        const listResp = await fetch(listUrl);
+        const listData = await listResp.json();
 
-        // --- PROMPT "COMPUTER VISION" ---
-        // On ne demande pas de la musique, mais une description technique visuelle.
+        if (listData.error) {
+            return res.status(500).json({ error: "Impossible de lister les modèles : " + listData.error.message });
+        }
+
+        const allModels = listData.models || [];
+        
+        // On filtre pour trouver un modèle :
+        // 1. Qui accepte "generateContent" (Vision/Texte)
+        // 2. Qui n'est PAS le 2.0 (car quota trop faible)
+        // 3. Qui n'est PAS "gemini-pro" tout court (car il ne voit pas les images)
+        const validModels = allModels.filter(m => 
+            m.supportedGenerationMethods.includes("generateContent") && 
+            !m.name.includes("2.0") &&
+            !m.name.endsWith("gemini-pro") 
+        );
+
+        // On essaie de trouver un "Flash", sinon un "Pro", sinon le premier qui vient
+        let chosenModel = validModels.find(m => m.name.includes("flash"));
+        if (!chosenModel) chosenModel = validModels.find(m => m.name.includes("1.5-pro"));
+        if (!chosenModel) chosenModel = validModels[0];
+
+        if (!chosenModel) {
+            return res.status(500).json({ error: "Aucun modèle compatible trouvé pour votre clé." });
+        }
+
+        // On nettoie le nom (ex: "models/gemini-1.5-flash-001" -> "gemini-1.5-flash-001")
+        const modelName = chosenModel.name.replace("models/", "");
+
+        // --- 2. ANALYSE VISUELLE (APPROCHE KLANG) ---
         const promptText = `
-            Act as an Optical Music Recognition (OMR) engine. 
-            Do not "interpret" the music. Just "detect" the symbols visually.
+            Act as an Optical Music Recognition (OMR) engine.
+            Task: Extract visual data about notes.
 
-            TASK: Extract structured data about every note note-by-note.
-
-            RETURN JSON ONLY with this specific structure:
+            RETURN JSON ONLY using this schema:
             {
                 "attributes": {
-                    "keySignature": "G",  // Count sharps/flats visually. 1 sharp = G.
-                    "timeSignature": "2/4" // Read the numbers at the start.
+                    "keySignature": "G", // Count sharps/flats. 1# = G.
+                    "timeSignature": "4/4"
                 },
                 "notes": [
                     {
-                        "pitch": "G",       // The letter name (A-G)
-                        "octave": 4,        // 4 is middle, 5 is high
+                        "pitch": "C", // Note name
+                        "octave": 4, 
+                        "accidental": "", // "#", "b", or ""
                         "visualType": "quarter" // CRITICAL: Identify by SHAPE.
-                                                // "quarter" = Solid head, no flag.
-                                                // "half" = Hollow head, stem.
-                                                // "eighth" = Solid head, 1 flag or 1 beam.
-                                                // "whole" = Hollow head, no stem.
-                    },
-                    ...
+                    }
                 ]
             }
 
             VISUAL RULES FOR "visualType":
-            - IF Note Head is HOLLOW -> It is "half" (or "whole" if no stem).
-            - IF Note Head is SOLID -> Check the stem.
-                 - No flag/beam? -> "quarter"
-                 - 1 flag/beam? -> "eighth"
-            - IGNORE musical context. Trust your eyes. If it looks like a half note, it is a half note.
+            - Hollow head (vide) = "half" (Blanche) or "whole" (Ronde).
+            - Solid head (pleine) + Stem (tige) = "quarter" (Noire).
+            - Solid head + Flag/Beam (barre) = "eighth" (Croche).
         `;
 
-        const requestBody = {
-            contents: [{
-                parts: [
-                    { text: promptText },
-                    { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
-                ]
-            }],
-            safetySettings: [
-                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-            ],
-            // On force le mode JSON natif de Gemini (nouveauté puissante)
-            generationConfig: {
-                response_mime_type: "application/json"
-            }
-        };
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify({
+                contents: [{
+                    parts: [
+                        { text: promptText },
+                        { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
+                    ]
+                }],
+                generationConfig: { response_mime_type: "application/json" }
+            })
         });
 
         const data = await response.json();
 
-        if (data.error) return res.status(500).json({ error: `Erreur Google : ` + data.error.message });
+        if (data.error) return res.status(500).json({ error: `Erreur Google (${modelName}) : ` + data.error.message });
         
         if (data.candidates && data.candidates[0].content) {
             const jsonText = data.candidates[0].content.parts[0].text;
-            // Pas besoin de regex complexe, Gemini renvoie du JSON pur grâce à generationConfig
-            const musicData = JSON.parse(jsonText);
-            return res.status(200).json({ musicData: musicData });
+            return res.status(200).json({ musicData: JSON.parse(jsonText) });
         } else {
             return res.status(500).json({ error: "L'IA n'a rien vu." });
         }
