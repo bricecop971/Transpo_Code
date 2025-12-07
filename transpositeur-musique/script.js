@@ -1,6 +1,4 @@
-// =========================================================
-//  SCRIPT.JS - MOTEUR DE RECONSTRUCTION (STYLE KLANG)
-// =========================================================
+// SCRIPT.JS - MOTEUR DE RECONSTRUCTION VISUELLE
 
 const fileInput = document.getElementById('file-input');
 const uploadZone = document.querySelector('.upload-zone');
@@ -16,7 +14,7 @@ const metaKey = document.getElementById('meta-key');
 
 let currentMusicData = null;
 
-// --- 1. OUTILS IMAGES ---
+// --- OUTILS IMAGES ---
 function getBase64(file) {
     return new Promise((r, j) => {
         const reader = new FileReader();
@@ -48,80 +46,57 @@ async function convertPdfToImage(pdfFile) {
     return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.7));
 }
 
-// --- 2. LE CONSTRUCTEUR ABC (LOGIQUE MATHÉMATIQUE) ---
+// --- CONSTRUCTEUR ABC ---
 function buildAbcFromVisualData(data) {
     if (!data || !data.notes) return "";
 
     const attr = data.attributes || {};
-    let abc = `X:1\n`;
-    abc += `T:Partition Scannée\n`;
-    abc += `M:${attr.timeSignature || "4/4"}\n`;
-    abc += `K:${attr.keySignature || "C"}\n`;
-    abc += `L:1/4\n`; // On base tout sur la noire
-    abc += `%%staffwidth 800\n`;
+    // Utilisation des valeurs du dashboard si disponibles (correction utilisateur)
+    const timeSig = metaMeter.value || attr.timeSignature || "4/4";
+    const keySig = metaKey.value || attr.keySignature || "C";
+    const title = metaTitle.value || "Partition Scannée";
 
-    // Calcul de la durée mathématique attendue par mesure
-    // Ex: 2/4 -> 2 temps. 4/4 -> 4 temps.
-    let timeSig = attr.timeSignature || "4/4";
+    let abc = `X:1\nT:${title}\nM:${timeSig}\nK:${keySig}\nL:1/4\n%%staffwidth 800\n`;
+
+    // Calcul mathématique des barres de mesure
     let [beats, value] = timeSig.split('/').map(Number);
-    // En base 1/4 (noire), la durée totale d'une mesure est :
-    let measureLimit = beats * (4 / value); 
-    
-    let currentMeasureDuration = 0;
+    if (!beats) { beats=4; value=4; }
+    let measureLimit = beats * (4 / value); // Durée totale en noires
+    let currentDuration = 0;
 
     data.notes.forEach(note => {
-        // --- A. TRADUCTION VISUEL -> ABC ---
         let abcNote = "";
         let durationVal = 0;
 
-        // 1. La Hauteur (Pitch)
-        let noteChar = note.pitch.toUpperCase();
-        if (note.octave >= 5) noteChar = noteChar.toLowerCase();
-        if (note.octave >= 6) noteChar += "'";
-        if (note.octave <= 3) noteChar += ",";
+        // Pitch
+        let char = note.pitch.toUpperCase();
+        if (note.octave >= 5) char = char.toLowerCase();
+        if (note.octave >= 6) char += "'";
+        if (note.octave <= 3) char += ",";
         
-        // Gestion des altérations détectées (si l'IA en envoie, sinon vide)
-        if (note.accidental === "#") abcNote += "^";
-        if (note.accidental === "b") abcNote += "_";
+        let acc = "";
+        if (note.accidental === "#") acc = "^";
+        if (note.accidental === "b") acc = "_";
         
-        abcNote += noteChar;
+        abcNote += acc + char;
 
-        // 2. Le Rythme (Shape -> Code)
+        // Rythme basé sur la FORME visuelle
         switch (note.visualType) {
-            case "whole": // Ronde
-                abcNote += "4";
-                durationVal = 4;
-                break;
-            case "half": // Blanche (Tête vide)
-                abcNote += "2";
-                durationVal = 2;
-                break;
-            case "quarter": // Noire (Tête pleine)
-                // Pas de chiffre = 1 temps
-                durationVal = 1;
-                break;
-            case "eighth": // Croche (Drapeau/Barre)
-                abcNote += "/2";
-                durationVal = 0.5;
-                break;
-            case "sixteenth": // Double
-                abcNote += "/4";
-                durationVal = 0.25;
-                break;
-            default:
-                durationVal = 1; // Par défaut noire
+            case "whole": abcNote += "4"; durationVal = 4; break;
+            case "half": abcNote += "2"; durationVal = 2; break;
+            case "quarter": durationVal = 1; break; // Par défaut
+            case "eighth": abcNote += "/2"; durationVal = 0.5; break;
+            case "sixteenth": abcNote += "/4"; durationVal = 0.25; break;
+            default: durationVal = 1; // Sécurité
         }
 
-        // Ajout de la note au code
         abc += abcNote + " ";
         
-        // --- B. GESTION DES BARRES DE MESURE ---
-        // On compte les temps. Si on dépasse la mesure, on met une barre.
-        currentMeasureDuration += durationVal;
-        
-        if (currentMeasureDuration >= measureLimit) {
+        // Ajout automatique des barres |
+        currentDuration += durationVal;
+        if (currentDuration >= measureLimit - 0.01) { // Petite marge d'erreur flottante
             abc += "| ";
-            currentMeasureDuration = 0; // Reset compteur
+            currentDuration = 0;
         }
     });
 
@@ -129,11 +104,11 @@ function buildAbcFromVisualData(data) {
     return abc;
 }
 
-// --- 3. CHARGEMENT ---
+// --- CHARGEMENT ---
 fileInput.addEventListener('change', async function() {
     if (!fileInput.files.length) return;
     
-    if (uploadText) uploadText.innerHTML = `<strong>Scanner Optique...</strong><br>Analyse des formes 👁️`;
+    if (uploadText) uploadText.innerHTML = `<strong>Scanner Auto...</strong><br>Recherche du modèle IA compatible 🧠`;
     if (uploadZone) uploadZone.style.borderColor = "#00e5ff";
 
     try {
@@ -170,17 +145,16 @@ fileInput.addEventListener('change', async function() {
         const responseData = await res.json();
         if (responseData.error) throw new Error(responseData.error);
 
-        // Récupération des données brutes
         currentMusicData = responseData.musicData;
 
-        // On remplit le Dashboard
+        // Remplissage Dashboard
         if (currentMusicData.attributes) {
-            metaTitle.value = "Partition Scannée";
+            metaTitle.value = "Partition IA";
             metaMeter.value = currentMusicData.attributes.timeSignature || "4/4";
             metaKey.value = currentMusicData.attributes.keySignature || "C";
         }
 
-        if (uploadText) uploadText.innerHTML = `<strong>Scan Terminé !</strong><br>Formes détectées.<br><button onclick="window.location.reload()" style="background:#333;color:white;border:none;padding:5px;margin-top:5px;cursor:pointer">❌ Annuler</button>`;
+        if (uploadText) uploadText.innerHTML = `<strong>Scan Terminé !</strong><br>Vérifiez les données.<br><button onclick="window.location.reload()" style="background:#333;color:white;border:none;padding:5px;margin-top:5px;cursor:pointer">❌ Annuler</button>`;
         if (uploadZone) uploadZone.style.borderColor = "#00ff00";
         if (dashboard) dashboard.style.display = "grid";
 
@@ -191,14 +165,9 @@ fileInput.addEventListener('change', async function() {
     }
 });
 
-// --- 4. TRANSPOSITION ---
+// --- TRANSPOSITION ---
 transposeBtn.addEventListener('click', function() {
     if (!currentMusicData) { alert("Aucune donnée !"); return; }
-
-    // On met à jour les attributs si l'utilisateur a changé le dashboard
-    if (!currentMusicData.attributes) currentMusicData.attributes = {};
-    currentMusicData.attributes.timeSignature = metaMeter.value;
-    currentMusicData.attributes.keySignature = metaKey.value;
 
     const instrumentKey = document.getElementById('transposition').value;
     const instrumentName = document.getElementById('transposition').options[document.getElementById('transposition').selectedIndex].text;
@@ -208,7 +177,7 @@ transposeBtn.addEventListener('click', function() {
     if (instrumentKey === "Eb") visualTranspose = 9;
     if (instrumentKey === "F") visualTranspose = 7;
 
-    // CONSTRUCTION DU CODE ABC
+    // CONSTRUCTION DU CODE
     const abcCode = buildAbcFromVisualData(currentMusicData);
 
     document.getElementById('final-title').innerText = "Résultat : " + instrumentName;
