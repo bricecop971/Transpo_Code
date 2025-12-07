@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : INSPIRATION OMR & VÉRIFICATION MATHÉMATIQUE
+// VERSION : APPROCHE KLANG.IO (EXTRACTION VISUELLE STRICTE)
 
 export const config = {
     api: {
@@ -14,50 +14,46 @@ export default async function handler(req, res) {
     if (!apiKey) return res.status(500).json({ error: 'Clé API manquante' });
 
     try {
-        const { image, mimeType, meter } = req.body;
+        const { image, mimeType } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        const userMeter = meter || "4/4";
+        // On utilise Flash 1.5 pour sa rapidité de traitement visuel
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-        // Détection du modèle (inchangée)
-        const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
-        const listResp = await fetch(listUrl);
-        const listData = await listResp.json();
-        const models = listData.models || [];
-        
-        let chosenModel = models.find(m => m.name.includes("flash") && !m.name.includes("2.0") && m.supportedGenerationMethods.includes("generateContent"));
-        if (!chosenModel) chosenModel = models.find(m => m.name.includes("pro") && !m.name.includes("2.0"));
-        if (!chosenModel) chosenModel = models[0];
-
-        const modelName = chosenModel.name.replace("models/", "");
-
-        // --- PROMPT OMR ET MATHÉMATIQUE ---
+        // --- PROMPT "COMPUTER VISION" ---
+        // On ne demande pas de la musique, mais une description technique visuelle.
         const promptText = `
-            Agissez comme un Moteur de Reconnaissance Optique Musicale (OMR) qui traduit rigoureusement les symboles en Notation ABC.
+            Act as an Optical Music Recognition (OMR) engine. 
+            Do not "interpret" the music. Just "detect" the symbols visually.
 
-            RAPPEL CRITIQUE: La Signature de Temps est M:${userMeter}.
+            TASK: Extract structured data about every note note-by-note.
 
-            1. **PRÉ-ANALYSE L: (Unité de Base) :**
-               - Déterminez la note la plus courte présente (croche, noire, etc.).
-               - Si la note la plus courte est une croche (crochet simple), vous DEVEZ ajouter la ligne L:1/8.
-               - Si la note la plus courte est une noire, utilisez L:1/4.
-               - Placez la ligne L: juste après T: ou K:.
+            RETURN JSON ONLY with this specific structure:
+            {
+                "attributes": {
+                    "keySignature": "G",  // Count sharps/flats visually. 1 sharp = G.
+                    "timeSignature": "2/4" // Read the numbers at the start.
+                },
+                "notes": [
+                    {
+                        "pitch": "G",       // The letter name (A-G)
+                        "octave": 4,        // 4 is middle, 5 is high
+                        "visualType": "quarter" // CRITICAL: Identify by SHAPE.
+                                                // "quarter" = Solid head, no flag.
+                                                // "half" = Hollow head, stem.
+                                                // "eighth" = Solid head, 1 flag or 1 beam.
+                                                // "whole" = Hollow head, no stem.
+                    },
+                    ...
+                ]
+            }
 
-            2. **TRADUCTION DES VALEURS (L:1/8 FORCÉE PAR EXEMPLE) :**
-               - Si L:1/8 est utilisé:
-                 - Croche (Eighth Note) = Note (Ex: C)
-                 - Noire (Quarter Note) = Note + '2' (Ex: C2)
-                 - Blanche (Half Note) = Note + '4' (Ex: C4)
-
-            3. **VÉRIFICATION MATHÉMATIQUE PAR MESURE (OMR CHECK)**:
-               - Après avoir généré chaque mesure (entre deux barres '|'), vérifiez que la somme des durées correspond EXACTEMENT à M:${userMeter}, en utilisant l'unité L: que vous avez choisie. Si ce n'est pas le cas, ajustez la durée de la dernière note de la mesure.
-
-            4. **FIDÉLITÉ VISUELLE (BEAMING/TONALITÉ)**:
-               - K: (Tonalité) : Comptez les altérations à la clé pour être exact.
-               - Ligatures : Collez les notes (Ex: C/2D/2) quand elles sont liées visuellement.
-
-            OUTPUT:
-            Retournez UNIQUEMENT le code ABC valide, commençant par X:1.
+            VISUAL RULES FOR "visualType":
+            - IF Note Head is HOLLOW -> It is "half" (or "whole" if no stem).
+            - IF Note Head is SOLID -> Check the stem.
+                 - No flag/beam? -> "quarter"
+                 - 1 flag/beam? -> "eighth"
+            - IGNORE musical context. Trust your eyes. If it looks like a half note, it is a half note.
         `;
 
         const requestBody = {
@@ -72,10 +68,12 @@ export default async function handler(req, res) {
                 { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
                 { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
                 { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-            ]
+            ],
+            // On force le mode JSON natif de Gemini (nouveauté puissante)
+            generationConfig: {
+                response_mime_type: "application/json"
+            }
         };
-
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
         const response = await fetch(url, {
             method: 'POST',
@@ -88,13 +86,12 @@ export default async function handler(req, res) {
         if (data.error) return res.status(500).json({ error: `Erreur Google : ` + data.error.message });
         
         if (data.candidates && data.candidates[0].content) {
-            let abcCode = data.candidates[0].content.parts[0].text;
-            abcCode = abcCode.replace(/```abc/gi, "").replace(/```/g, "").trim();
-            // On force le M: choisi par l'utilisateur
-            abcCode = abcCode.replace(/^M:.*$/m, `M:${userMeter}`);
-            return res.status(200).json({ abc: abcCode });
+            const jsonText = data.candidates[0].content.parts[0].text;
+            // Pas besoin de regex complexe, Gemini renvoie du JSON pur grâce à generationConfig
+            const musicData = JSON.parse(jsonText);
+            return res.status(200).json({ musicData: musicData });
         } else {
-            return res.status(500).json({ error: "L'IA n'a pas trouvé de code ABC." });
+            return res.status(500).json({ error: "L'IA n'a rien vu." });
         }
 
     } catch (error) {
