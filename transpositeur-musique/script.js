@@ -1,23 +1,12 @@
-// =========================================================
-//  SCRIPT.JS - VERSION SYNCHRO (IMAGE + AUDIO)
-// =========================================================
+// SCRIPT.JS - MODE INSPECTION
 
-const fileInput = document.getElementById('partition-upload');
-const uploadText = document.getElementById('upload-text');
-const transposeBtn = document.getElementById('transpose-btn');
-const resultZone = document.getElementById('result-zone');
-const dashboard = document.getElementById('dashboard');
+const fileInput = document.getElementById('file-input');
+const statusText = document.getElementById('status-text');
+const inspector = document.getElementById('inspector');
+const abcEditor = document.getElementById('abc-editor');
+const refreshBtn = document.getElementById('refresh-btn');
 
-// Dashboard
-const metaTitle = document.getElementById('meta-title');
-const metaMeter = document.getElementById('meta-meter');
-const metaKey = document.getElementById('meta-key');
-const abcSource = document.getElementById('abc-source');
-
-// Variable globale pour le code ABC original (sans notes)
-let originalMusicBody = ""; 
-
-// --- OUTILS ---
+// --- OUTILS IMAGE ---
 function getBase64(file) {
     return new Promise((r, j) => {
         const reader = new FileReader();
@@ -51,33 +40,28 @@ async function convertPdfToImage(pdfFile) {
     return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.7));
 }
 
-// --- PARSING ABC ---
-function parseABC(abcCode) {
-    // 1. On extrait les infos
-    const T = abcCode.match(/^T:(.*)$/m);
-    const M = abcCode.match(/^M:(.*)$/m);
-    const K = abcCode.match(/^K:(.*)$/m);
-    
-    // 2. On remplit le dashboard
-    metaTitle.value = T ? T[1].trim() : "Morceau IA";
-    metaMeter.value = M ? M[1].trim() : "4/4";
-    metaKey.value = K ? K[1].trim() : "C";
-
-    // 3. On extrait juste les notes (on enlève les headers pour les reconstruire proprement après)
-    const lines = abcCode.split('\n');
-    const musicLines = lines.filter(line => !/^[A-Z]:/.test(line));
-    originalMusicBody = musicLines.join('\n');
+// --- FONCTION D'AFFICHAGE ---
+function renderABC() {
+    const code = abcEditor.value;
+    // On dessine simplement ce qu'il y a dans la zone de texte
+    ABCJS.renderAbc("paper", code, {
+        responsive: "resize",
+        staffwidth: 800
+    });
 }
 
 // --- CHARGEMENT ---
 fileInput.addEventListener('change', async function() {
     if (!fileInput.files.length) return;
-    const file = fileInput.files[0];
-    let imgFile = file;
-
-    uploadText.innerHTML = `<strong>Analyse en cours...</strong>`;
     
+    statusText.innerHTML = `⏳ Analyse de l'image en cours...`;
+    inspector.style.display = "none";
+
     try {
+        let file = fileInput.files[0];
+        let imgFile;
+
+        // Préparation fichier
         if (file.type === 'application/pdf') {
             const blob = await convertPdfToImage(file);
             imgFile = new File([blob], "temp.jpg");
@@ -86,6 +70,8 @@ fileInput.addEventListener('change', async function() {
         }
 
         const base64 = await getBase64(imgFile);
+
+        // Appel API
         const res = await fetch('/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -95,65 +81,19 @@ fileInput.addEventListener('change', async function() {
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
-        // SUCCÈS
-        parseABC(data.abc);
-        dashboard.style.display = "block";
-        uploadText.innerHTML = `✅ Analyse terminée. Vérifiez la tonalité (K) ci-dessous.`;
+        // SUCCÈS : On affiche le code brut
+        abcEditor.value = data.abc || "Erreur: Pas de code ABC reçu.";
+        
+        inspector.style.display = "block";
+        statusText.innerHTML = `✅ Analyse terminée. Vérifiez le résultat ci-dessous.`;
+        
+        renderABC(); // Premier dessin
 
     } catch (e) {
-        uploadText.innerHTML = `❌ Erreur : ${e.message}`;
+        statusText.innerHTML = `❌ Erreur : ${e.message}`;
         console.error(e);
     }
 });
 
-// --- TRANSPOSITION ---
-transposeBtn.addEventListener('click', function() {
-    if (!originalMusicBody) { alert("Chargez une partition !"); return; }
-
-    const keySelect = document.getElementById('transposition');
-    const instrumentKey = keySelect.value;
-    
-    // Calcul transposition (Demi-tons)
-    let transposeSemitones = 0;
-    if (instrumentKey === "Bb") transposeSemitones = 2; // +2
-    if (instrumentKey === "Eb") transposeSemitones = 9; // +9
-    if (instrumentKey === "F") transposeSemitones = 7;  // +7
-
-    // 1. On reconstruit le ABC complet
-    const finalABC = `
-X:1
-T:${metaTitle.value}
-M:${metaMeter.value}
-K:${metaKey.value}
-L:1/4
-%%staffwidth 800
-${originalMusicBody}
-|]`;
-
-    document.getElementById('final-title').innerText = "Résultat : " + keySelect.options[keySelect.selectedIndex].text;
-    resultZone.style.display = "block";
-
-    // 2. RENDU VISUEL (Avec transposition visuelle)
-    const visualObj = ABCJS.renderAbc("paper", finalABC, {
-        responsive: "resize",
-        visualTranspose: transposeSemitones // Décale les notes sur la portée
-    });
-
-    // 3. RENDU AUDIO (Avec transposition sonore !)
-    if (ABCJS.synth.supportsAudio()) {
-        const synth = new ABCJS.synth.SynthController();
-        synth.load("#audio", null, { displayLoop: true, displayRestart: true, displayPlay: true, displayProgress: true, displayWarp: true });
-        
-        const createSynth = new ABCJS.synth.CreateSynth();
-        
-        // C'EST ICI LA CLÉ : on dit au synthé de décaler le son aussi !
-        createSynth.init({ 
-            visualObj: visualObj[0],
-            options: { 
-                midiTranspose: transposeSemitones // Synchronise le son avec l'image
-            } 
-        }).then(() => synth.setTune(visualObj[0], false));
-    }
-    
-    resultZone.scrollIntoView({behavior: "smooth"});
-});
+// Bouton pour redessiner si l'utilisateur corrige le code
+refreshBtn.addEventListener('click', renderABC);
