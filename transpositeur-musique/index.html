@@ -3,104 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transpositeur IA</title>
+    <title>Inspecteur de Partition IA</title>
     <link rel="stylesheet" href="style.css">
-    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
-
-    <style>
-        /* CORRECTIF VISUEL OBLIGATOIRE */
-        body { background-color: #121212; color: #e0e0e0; font-family: sans-serif; text-align: center; }
-        
-        /* 1. La feuille de partition DOIT être blanche */
-        #paper {
-            background-color: white !important;
-            color: black !important;
-            padding: 15px;
-            margin: 20px auto;
-            width: 90%;
-            border-radius: 5px;
-            overflow-x: auto;
-        }
-        #paper svg { width: 100% !important; }
-        /* Force la couleur noire pour l'impression et l'écran */
-        #paper svg path { fill: #000000 !important; stroke: #000000 !important; }
-
-        /* 2. Les boutons DOIVENT être lisibles */
-        button {
-            background-color: #333;
-            color: white;
-            border: 1px solid #555;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-            margin: 5px;
-        }
-        button:hover { background-color: #555; }
-        
-        /* Le bouton principal */
-        #transpose-btn {
-            background-color: #00e5ff;
-            color: #000; /* Texte noir sur bleu */
-            border: none;
-            font-weight: bold;
-            font-size: 16px;
-            padding: 15px 30px;
-            margin-top: 20px;
-        }
-
-        /* 3. Dashboard lisible */
-        .dash-card { background: #222; border: 1px solid #444; padding: 10px; border-radius: 8px; text-align: left; }
-        .dash-card label { display: block; font-size: 11px; color: #aaa; margin-bottom: 5px; }
-        .dash-card input { width: 100%; background: transparent; border: none; color: #00e5ff; font-weight: bold; font-size: 16px; outline: none; }
-        
-        /* 4. Lecteur Audio */
-        .abcjs-inline-audio { background: #222; border: 1px solid #00e5ff; border-radius: 5px; padding: 5px; margin-top: 10px; display: flex; justify-content: center; }
-        .abcjs-btn { background: #00e5ff !important; color: black !important; padding: 2px 8px; border-radius: 3px; border: none; margin: 0 2px; }
-        .abcjs-midi-progress-background { background: #444; border: 1px solid #555; }
-        .abcjs-midi-progress-indicator { background: #00e5ff; }
-    </style>
 </head>
 <body>
 
-    <header><h1>🎼 Transpositeur IA</h1></header>
+    <header>
+        <h1>Étape 1 : Inspection</h1>
+        <p>Voyons exactement ce que l'IA détecte.</p>
+    </header>
 
     <main>
-        <div class="upload-zone" style="border: 2px dashed #00e5ff; padding: 30px; margin: 20px auto; width: 80%; background: rgba(0,229,255,0.05);">
-            <p id="upload-text">📸 Chargez votre partition</p>
-            <input type="file" id="partition-upload" accept="image/*,.pdf">
+        <div class="upload-zone">
+            <p id="status-text">📸 Chargez une partition pour l'analyser</p>
+            <input type="file" id="file-input" accept="image/*,.pdf">
         </div>
 
-        <div id="dashboard" style="display:none; margin: 20px auto; width: 80%;">
-            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px;">
-                <div class="dash-card"><label>TITRE</label><input type="text" id="meta-title"></div>
-                <div class="dash-card"><label>MESURE</label><input type="text" id="meta-meter"></div>
-                <div class="dash-card"><label>TONALITÉ</label><input type="text" id="meta-key"></div>
+        <div id="inspector" style="display:none; margin-top:20px;">
+            
+            <div style="display:flex; gap:20px; justify-content:center;">
+                <div style="width:45%; text-align:left;">
+                    <h3>Code ABC (Détecté par l'IA)</h3>
+                    <p style="font-size:12px; color:#aaa;">Vous pouvez corriger ce texte manuellement !</p>
+                    <textarea id="abc-editor" style="width:100%; height:300px; background:#222; color:#0f0; font-family:monospace; padding:10px; border:1px solid #555;"></textarea>
+                    <button id="refresh-btn" style="width:100%; margin-top:10px; padding:10px; background:#00e5ff; border:none; cursor:pointer; font-weight:bold;">🔄 Mettre à jour le visuel</button>
+                </div>
+
+                <div style="width:45%; background:white; color:black; padding:10px; border-radius:5px;">
+                    <h3 style="color:black; margin-top:0;">Résultat Visuel</h3>
+                    <div id="paper"></div>
+                </div>
             </div>
-            <textarea id="abc-source" style="display:none;"></textarea>
-        </div>
 
-        <div class="options-container" style="margin: 20px;">
-            <label>Transposer vers : </label>
-            <select id="transposition" style="padding:10px; border-radius:5px; background:#333; color:white;">
-                <option value="Eb">Saxophone Alto (Mi bémol)</option>
-                <option value="Bb">Trompette (Si bémol)</option>
-                <option value="F">Cor (Fa)</option>
-                <option value="C" selected>Piano / Flûte</option>
-            </select>
-        </div>
+            <div style="margin-top:30px; padding-top:20px; border-top:1px solid #333;">
+                <h3>Une fois validé, on transposera ici (Étape suivante)</h3>
+                <select id="instrument">
+                    <option value="Eb">Vers Saxo Alto (Eb)</option>
+                    <option value="Bb">Vers Trompette (Bb)</option>
+                </select>
+                <button id="transpose-btn" style="background:#555; color:white; border:none; padding:10px 20px; cursor:not-allowed;">Transposer (Bientôt)</button>
+            </div>
 
-        <button id="transpose-btn">✨ Transposer</button>
-
-        <div id="result-zone" style="display:none; margin-top:30px;">
-            <h2 id="final-title">Résultat</h2>
-            <div id="audio"></div>
-            <div id="paper"></div>
-            <button onclick="window.print()">🖨️ Imprimer</button>
-            <button onclick="window.location.reload()">🔄 Nouveau</button>
         </div>
     </main>
 
