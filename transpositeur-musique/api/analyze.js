@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : SÉCURITÉ RYTHMIQUE MAXIMALE
+// VERSION : FIDÉLITÉ VISUELLE (LIGATURES) & HARMONIQUE
 
 export const config = {
     api: {
@@ -19,7 +19,7 @@ export default async function handler(req, res) {
 
         const userMeter = meter || "4/4";
 
-        // Détection du modèle (Flash est préféré pour la vitesse)
+        // Détection du modèle
         const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
         const listResp = await fetch(listUrl);
         const listData = await listResp.json();
@@ -31,27 +31,39 @@ export default async function handler(req, res) {
 
         const modelName = chosenModel.name.replace("models/", "");
 
-        // --- PROMPT MATHÉMATIQUE RENFORCÉ ---
+        // --- PROMPT FIDÉLITÉ TOTALE ---
         const promptText = `
-            Agissez comme un Moteur de Transcription Musicale strict.
+            Act as an expert Music Engraver. Transcribe this sheet music to ABC Notation.
 
-            RAPPEL CRITIQUE: La Signature de Temps est M:${userMeter}. Le total des durées entre chaque barre verticale (|) DOIT être égal à cette valeur.
+            CONSTRAINT: Use Time Signature M:${userMeter}.
 
-            TÂCHE: Transcrivez les hauteurs de notes et les rythmes en Notation ABC.
+            1. **KEY SIGNATURE (CRITICAL)**: 
+               - Look at the very beginning of the first staff. 
+               - COUNT the sharps (#) or flats (b).
+               - 0 = K:C
+               - 1 Sharp = K:G
+               - 2 Sharps = K:D
+               - 1 Flat = K:F
+               - Write the correct K: header based on this count.
 
-            RÈGLES DE TRADUCTION RYTHMIQUE (STRICTES):
-            1. **Noire (Quarter Note / Tête Pleine SANS crochet):** Note seulement (Ex: C). Durée = 1/4.
-            2. **Blanche (Half Note / Tête Creuse):** Note + '2' (Ex: C2). Durée = 2/4.
-            3. **Croche (Eighth Note / Un seul crochet ou une seule ligature):** Note + '/2' (Ex: C/2). Durée = 1/8.
-            4. **Ronde (Whole Note):** Note + '4' (Ex: C4). Durée = 4/4.
-            5. **Notes Pointées:** Utiliser un '3' suivi de la durée (Ex: C3/2 pour une noire pointée, C/2 pour une croche pointée).
-            6. **Barres de Mesure (|):** Utilisez-les rigoureusement pour séparer chaque mesure, vérifiant que la somme des durées est correcte (égale à M:${userMeter}).
+            2. **BEAMING & GROUPING (VISUAL STYLE)**:
+               - Look at how notes are connected.
+               - If notes are connected by a horizontal bar (beam), write them WITHOUT SPACES between them.
+                 -> Visual: [🎵-🎵] => ABC: C/2D/2 (Correct)
+                 -> Visual: [🎵] [🎵] => ABC: C/2 D/2 (Incorrect if beamed)
+               - Replicate the exact visual grouping of the image.
 
-            CONTRAINTE EXTRÊME: N'utilisez JAMAIS de double-croches (notation /4 ou //) sauf si vous êtes certain à 100% que la note a DEUX crochets. En cas de doute, utilisez TOUJOURS la notation de la Croche simple (/2).
+            3. **NOTE VALUES (STRICT)**:
+               - Quarter (Noire) = Note (e.g. C)
+               - Half (Blanche) = Note + '2' (e.g. C2)
+               - Eighth (Croche) = Note + '/2' (e.g. C/2)
+               - Dotted Quarter = Note + '3/2' (e.g. C3/2)
+               
+            4. **BAR LINES**:
+               - Insert '|' exactly where they appear in the image.
 
-            SORTIE:
-            Retournez UNIQUEMENT le code ABC valide, commençant par X:1.
-            Incluez K: (Tonalité détectée) et M:${userMeter} (Mesure forcée).
+            OUTPUT:
+            Return ONLY the ABC code starting with X:1.
         `;
 
         const requestBody = {
@@ -84,7 +96,7 @@ export default async function handler(req, res) {
         if (data.candidates && data.candidates[0].content) {
             let abcCode = data.candidates[0].content.parts[0].text;
             abcCode = abcCode.replace(/```abc/gi, "").replace(/```/g, "").trim();
-            // Double sécurité: on force le M: dans le code retourné
+            // On force le M: choisi par l'utilisateur
             abcCode = abcCode.replace(/^M:.*$/m, `M:${userMeter}`);
             return res.status(200).json({ abc: abcCode });
         } else {
