@@ -1,11 +1,9 @@
 // api/analyze.js
-// VERSION : RECONNAISSANCE VISUELLE DES FORMES (RYTHME)
+// VERSION : PROMPT COMPACT & STABILISÉ (Anti-Timeout)
 
 export const config = {
     api: {
-        bodyParser: {
-            sizeLimit: '4mb',
-        },
+        bodyParser: { sizeLimit: '4mb' },
     },
 };
 
@@ -19,7 +17,7 @@ export default async function handler(req, res) {
         const { image, mimeType } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        // 1. SCANNER DE MODÈLES
+        // On cherche le meilleur modèle disponible (Flash est rapide)
         const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
         const listResp = await fetch(listUrl);
         const listData = await listResp.json();
@@ -31,38 +29,25 @@ export default async function handler(req, res) {
 
         const modelName = chosenModel.name.replace("models/", "");
 
-        // 2. CONSIGNE "DICTIONNAIRE VISUEL"
-        // On apprend à l'IA à traduire les formes en code ABC
+        // --- PROMPT COMPACTÉ ---
+        const promptText = `
+            Transcribe the attached sheet music image into valid ABC Notation.
+
+            STRICT RHYTHM MAPPING: Use these rules based on visual note shapes:
+            - Half Note (Blanche / Hollow Head): Add '2' (e.g., C2).
+            - Quarter Note (Noire / Solid Head): Write the note letter only (e.g., C).
+            - Eighth Note (Croche / Flag or Beam): Add '/2' (e.g., C/2).
+            - Dotted Notes: Use '3/2' or '3'.
+
+            STRICT HEADERS: You MUST accurately identify and include K: (Key) and M: (Time Signature).
+
+            OUTPUT FORMAT: Return ONLY the ABC code starting with X:1. No markdown, no explanations.
+        `;
+
         const requestBody = {
             contents: [{
                 parts: [
-                    { text: `
-                        Transcribe this sheet music to ABC Notation.
-                        
-                        --- VISUAL DICTIONARY FOR RHYTHM (CRITICAL) ---
-                        Look closely at the note heads and stems:
-                        
-                        1. **HOLLOW HEAD (Tête Blanche)**:
-                           - Usually a Half Note (Blanche).
-                           - RULE: You MUST add '2' after the note letter. (e.g., C2, D2).
-                        
-                        2. **SOLID HEAD (Tête Noire) + STEM (Tige)**:
-                           - Usually a Quarter Note (Noire).
-                           - RULE: Write just the letter. (e.g., C, D).
-                        
-                        3. **SOLID HEAD + FLAG/BEAM (Drapeau/Barre)**:
-                           - Usually an Eighth Note (Croche) or Sixteenth.
-                           - RULE: You MUST add '/2' or '/4' after the note. (e.g., C/2, D/2).
-                           - Look at groups of notes connected by a thick line (beam) -> These are /2.
-                        
-                        4. **DOTS (Points)**:
-                           - If a note has a dot '.' next to it, add '3/2' (if solid) or '3' (if hollow).
-
-                        --- STRUCTURE ---
-                        - Detect Time Signature (M:).
-                        - Detect Key Signature (K:).
-                        - Output ONLY the ABC code starting with X:1.
-                    `},
+                    { text: promptText },
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
             }],
@@ -91,7 +76,7 @@ export default async function handler(req, res) {
             abcCode = abcCode.replace(/```abc/gi, "").replace(/```/g, "").trim();
             return res.status(200).json({ abc: abcCode });
         } else {
-            return res.status(500).json({ error: "L'IA n'a pas trouvé de partition." });
+            return res.status(500).json({ error: "L'IA n'a pas trouvé de code ABC." });
         }
 
     } catch (error) {
