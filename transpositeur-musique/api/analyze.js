@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : FIDÉLITÉ VISUELLE (LIGATURES) & HARMONIQUE
+// VERSION : INSPIRATION OMR & VÉRIFICATION MATHÉMATIQUE
 
 export const config = {
     api: {
@@ -19,7 +19,7 @@ export default async function handler(req, res) {
 
         const userMeter = meter || "4/4";
 
-        // Détection du modèle
+        // Détection du modèle (inchangée)
         const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
         const listResp = await fetch(listUrl);
         const listData = await listResp.json();
@@ -31,39 +31,33 @@ export default async function handler(req, res) {
 
         const modelName = chosenModel.name.replace("models/", "");
 
-        // --- PROMPT FIDÉLITÉ TOTALE ---
+        // --- PROMPT OMR ET MATHÉMATIQUE ---
         const promptText = `
-            Act as an expert Music Engraver. Transcribe this sheet music to ABC Notation.
+            Agissez comme un Moteur de Reconnaissance Optique Musicale (OMR) qui traduit rigoureusement les symboles en Notation ABC.
 
-            CONSTRAINT: Use Time Signature M:${userMeter}.
+            RAPPEL CRITIQUE: La Signature de Temps est M:${userMeter}.
 
-            1. **KEY SIGNATURE (CRITICAL)**: 
-               - Look at the very beginning of the first staff. 
-               - COUNT the sharps (#) or flats (b).
-               - 0 = K:C
-               - 1 Sharp = K:G
-               - 2 Sharps = K:D
-               - 1 Flat = K:F
-               - Write the correct K: header based on this count.
+            1. **PRÉ-ANALYSE L: (Unité de Base) :**
+               - Déterminez la note la plus courte présente (croche, noire, etc.).
+               - Si la note la plus courte est une croche (crochet simple), vous DEVEZ ajouter la ligne L:1/8.
+               - Si la note la plus courte est une noire, utilisez L:1/4.
+               - Placez la ligne L: juste après T: ou K:.
 
-            2. **BEAMING & GROUPING (VISUAL STYLE)**:
-               - Look at how notes are connected.
-               - If notes are connected by a horizontal bar (beam), write them WITHOUT SPACES between them.
-                 -> Visual: [🎵-🎵] => ABC: C/2D/2 (Correct)
-                 -> Visual: [🎵] [🎵] => ABC: C/2 D/2 (Incorrect if beamed)
-               - Replicate the exact visual grouping of the image.
+            2. **TRADUCTION DES VALEURS (L:1/8 FORCÉE PAR EXEMPLE) :**
+               - Si L:1/8 est utilisé:
+                 - Croche (Eighth Note) = Note (Ex: C)
+                 - Noire (Quarter Note) = Note + '2' (Ex: C2)
+                 - Blanche (Half Note) = Note + '4' (Ex: C4)
 
-            3. **NOTE VALUES (STRICT)**:
-               - Quarter (Noire) = Note (e.g. C)
-               - Half (Blanche) = Note + '2' (e.g. C2)
-               - Eighth (Croche) = Note + '/2' (e.g. C/2)
-               - Dotted Quarter = Note + '3/2' (e.g. C3/2)
-               
-            4. **BAR LINES**:
-               - Insert '|' exactly where they appear in the image.
+            3. **VÉRIFICATION MATHÉMATIQUE PAR MESURE (OMR CHECK)**:
+               - Après avoir généré chaque mesure (entre deux barres '|'), vérifiez que la somme des durées correspond EXACTEMENT à M:${userMeter}, en utilisant l'unité L: que vous avez choisie. Si ce n'est pas le cas, ajustez la durée de la dernière note de la mesure.
+
+            4. **FIDÉLITÉ VISUELLE (BEAMING/TONALITÉ)**:
+               - K: (Tonalité) : Comptez les altérations à la clé pour être exact.
+               - Ligatures : Collez les notes (Ex: C/2D/2) quand elles sont liées visuellement.
 
             OUTPUT:
-            Return ONLY the ABC code starting with X:1.
+            Retournez UNIQUEMENT le code ABC valide, commençant par X:1.
         `;
 
         const requestBody = {
