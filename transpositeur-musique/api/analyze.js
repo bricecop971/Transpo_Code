@@ -1,11 +1,9 @@
 // api/analyze.js
-// VERSION : EXPERT DU COURS (PROMPT RIGOUREUX)
+// VERSION : VISION GÉOMÉTRIQUE (Focalisation sur les symboles visuels)
 
 export const config = {
     api: {
-        bodyParser: {
-            sizeLimit: '4mb',
-        },
+        bodyParser: { sizeLimit: '4mb' },
     },
 };
 
@@ -17,58 +15,45 @@ export default async function handler(req, res) {
 
     try {
         const { image, mimeType } = req.body;
-        if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
+        if (!image) return res.status(400).json({ error: 'Aucune image' });
 
-        // 1. DÉTECTION AUTOMATIQUE DU MODÈLE DISPONIBLE
-        // On reprend le scanner qui a bien marché pour toi, car c'est le plus sûr
+        // On reprend le scanner de modèles qui fonctionnait
         const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
         const listResp = await fetch(listUrl);
         const listData = await listResp.json();
-        
         const models = listData.models || [];
-        // On cherche un modèle Flash ou Pro (hors 2.0 exp qui est limité)
+        
         let chosenModel = models.find(m => m.name.includes("flash") && !m.name.includes("2.0") && m.supportedGenerationMethods.includes("generateContent"));
         if (!chosenModel) chosenModel = models.find(m => m.name.includes("pro") && !m.name.includes("2.0"));
         if (!chosenModel) chosenModel = models[0];
-
         const modelName = chosenModel.name.replace("models/", "");
 
-        // 2. LE PROMPT "COURANT D'INGÉNIEUR"
-        // Inspiré de ton cours : on définit le contexte, la tâche, et les contraintes strictes.
-        const promptText = `
-            CONTEXT: You are an expert music engraver and transcriber. Your task is to convert sheet music images into precise ABC Notation.
-
-            TASK: Transcribe the attached sheet music image into valid ABC code.
-
-            CRITICAL RULES (MUST FOLLOW):
-            1. **Key Signature (K:)**: Look at the start of the staff. Count the sharps (#) or flats (b) exactly. 
-               - 1 Sharp = K:G
-               - 2 Sharps = K:D
-               - 1 Flat = K:F
-               - No sharps/flats = K:C
-               Do not guess. Count them.
-
-            2. **Time Signature (M:)**: Identify the meter (e.g., 4/4, 3/4, 6/8, C).
-
-            3. **Rhythm & Duration (L:1/4)**: 
-               - The default length is a quarter note (1.0).
-               - A half note (blanche) MUST be written as '2' (e.g., C2).
-               - A dotted half note MUST be '3' (e.g., C3).
-               - A whole note (ronde) MUST be '4' (e.g., C4).
-               - An eighth note (croche) MUST be '/2' (e.g., C/2).
-               - A dotted quarter note MUST be '3/2' (e.g., C3/2).
-               - **VERIFICATION**: The sum of durations in each bar MUST equal the time signature (e.g., in 4/4, sum must be 4).
-
-            4. **Beaming**: Group notes as they appear (e.g., C/2D/2E/2F/2).
-
-            OUTPUT FORMAT:
-            Return ONLY the ABC code block starting with X:1. No markdown, no explanations.
-        `;
-
+        // --- NOUVEAU PROMPT VISUEL ---
+        // On demande à l'IA de décrire les symboles avant d'écrire le code.
         const requestBody = {
             contents: [{
                 parts: [
-                    { text: promptText },
+                    { text: `
+                        Task: Transcribe this sheet music image to ABC Notation.
+                        
+                        FOCUS ON VISUAL SYMBOLS:
+                        1. **Time Signature**: Look at the start. Do you see two stacked numbers?
+                           - If top is 2 and bottom is 4, write M:2/4.
+                           - If top is 6 and bottom is 8, write M:6/8.
+                           - Do NOT default to 4/4 unless you see a 'C' or 4/4.
+                        
+                        2. **Note Duration (Visual recognition)**:
+                           - Note with **Solid Head** + **Stem** + **No Flag** = Quarter Note (Noire) -> ABC: C
+                           - Note with **Solid Head** + **Stem** + **One Flag/Beam** = Eighth Note (Croche) -> ABC: C/2
+                           - Note with **Solid Head** + **Stem** + **Two Flags/Beams** = Sixteenth Note (Double-croche) -> ABC: C/4
+                           - Note with **Hollow Head** + **Stem** = Half Note (Blanche) -> ABC: C2
+                        
+                        3. **Rhythm Check**:
+                           - Ensure the total duration of notes inside two '|' bars equals the Time Signature.
+                        
+                        OUTPUT:
+                        Return ONLY the ABC code block starting with X:1.
+                    `},
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
             }],
@@ -90,15 +75,14 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
-        if (data.error) return res.status(500).json({ error: `Erreur Google (${modelName}) : ` + data.error.message });
+        if (data.error) return res.status(500).json({ error: "Erreur Google : " + data.error.message });
         
         if (data.candidates && data.candidates[0].content) {
             let abcCode = data.candidates[0].content.parts[0].text;
-            // Nettoyage agressif du markdown pour ne garder que le code ABC
             abcCode = abcCode.replace(/```abc/gi, "").replace(/```/g, "").trim();
             return res.status(200).json({ abc: abcCode });
         } else {
-            return res.status(500).json({ error: "L'IA n'a pas trouvé de partition." });
+            return res.status(500).json({ error: "L'IA n'a pas pu lire la partition." });
         }
 
     } catch (error) {
