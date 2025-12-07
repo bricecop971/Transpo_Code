@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : SCIENTIFIC PITCH & DURATION
+// VERSION : VÉRIFICATION MATHÉMATIQUE STRICTE
 
 export const config = {
     api: {
@@ -17,7 +17,7 @@ export default async function handler(req, res) {
         const { image, mimeType } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        // Scan automatique du modèle
+        // 1. SÉLECTION DU MODÈLE
         const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
         const listResp = await fetch(listUrl);
         const listData = await listResp.json();
@@ -26,41 +26,44 @@ export default async function handler(req, res) {
         let chosenModel = models.find(m => m.name.includes("flash") && !m.name.includes("2.0") && m.supportedGenerationMethods.includes("generateContent"));
         if (!chosenModel) chosenModel = models.find(m => m.name.includes("pro") && !m.name.includes("2.0"));
         if (!chosenModel) chosenModel = models[0];
+
         const modelName = chosenModel.name.replace("models/", "");
 
-        // --- PROMPT SCIENTIFIQUE ---
+        // 2. PROMPT "MATHÉMATIQUE"
         const promptText = `
-            Analyze this sheet music image.
+            Act as a strict Optical Music Recognition engine with Mathematical Verification.
             
-            TASK: Extract every single note in reading order (left to right).
+            TASK: Extract notes and rhythm from the image.
             
-            RETURN JSON format:
+            STEP 1: VISUAL SCAN
+            - Identify the Time Signature (e.g., 4/4). Let's call the top number "TARGET_SUM".
+            - Identify note heads:
+              - Hollow Head (Vide) = Half Note (Blanche) -> Value: 2.0
+              - Solid Head (Pleine) + Stem = Quarter Note (Noire) -> Value: 1.0
+              - Solid Head + Flag/Beam = Eighth Note (Croche) -> Value: 0.5
+              - Dot (.) after note = Value * 1.5
+
+            STEP 2: MATHEMATICAL CHECK (CRITICAL)
+            - For every measure (between bar lines):
+              1. Sum the values of all notes found.
+              2. Compare with TARGET_SUM.
+              3. IF Sum < TARGET_SUM: You likely missed a rest or mistook a Half for a Quarter. FIX IT to match the target.
+              4. IF Sum > TARGET_SUM: You likely mistook a Quarter for a Half. FIX IT.
+
+            RETURN JSON FORMAT:
             {
-                "attributes": {
-                    "keySignature": "G", // e.g., C, G, D, F...
-                    "timeSignature": "4/4"
-                },
-                "notes": [
-                    { "pitch": "C4", "duration": 1.0 },
-                    { "pitch": "D4", "duration": 0.5 },
-                    { "pitch": "F#4", "duration": 2.0 }
+                "attributes": { "keySignature": "G", "timeSignature": "4/4" },
+                "measures": [
+                    [
+                        { "p": "C4", "d": 1.0 },  // Quarter
+                        { "p": "D4", "d": 0.5 },  // Eighth
+                        { "p": "E4", "d": 0.5 },  // Eighth
+                        { "p": "F4", "d": 2.0 }   // Half (Total = 4.0 -> OK for 4/4)
+                    ],
+                    ...
                 ]
             }
-
-            DATA RULES:
-            1. **PITCH**: Use Scientific Pitch Notation (e.g., C4 = Middle C). 
-               - Be precise about vertical position on the staff lines.
-               - Include accidentals (#/b) directly in the pitch string if written next to the note.
-            
-            2. **DURATION (Decimal)**:
-               - Quarter Note (Noire) = 1.0
-               - Half Note (Blanche) = 2.0
-               - Eighth Note (Croche) = 0.5
-               - Whole Note (Ronde) = 4.0
-               - Dotted Quarter = 1.5
-               - Dotted Half = 3.0
-
-            Ignore text lyrics. Focus on note heads.
+            Use "rest" for p (pitch) if it is a silence.
         `;
 
         const requestBody = {
