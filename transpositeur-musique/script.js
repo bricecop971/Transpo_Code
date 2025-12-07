@@ -1,20 +1,22 @@
-// SCRIPT.JS - MOTEUR DE RECONSTRUCTION VISUELLE
+// =========================================================
+//  SCRIPT.JS - VERSION TOLÉRANTE & DEBUG
+// =========================================================
 
-const fileInput = document.getElementById('file-input');
+const fileInput = document.getElementById('partition-upload');
 const uploadZone = document.querySelector('.upload-zone');
 const uploadText = document.querySelector('#upload-text') || document.querySelector('.upload-zone p');
 const transposeBtn = document.getElementById('transpose-btn');
 const resultZone = document.getElementById('result-zone');
 const dashboard = document.getElementById('dashboard');
 
-// Dashboard inputs
+// Inputs
 const metaTitle = document.getElementById('meta-title');
 const metaMeter = document.getElementById('meta-meter');
 const metaKey = document.getElementById('meta-key');
 
 let currentMusicData = null;
 
-// --- OUTILS IMAGES ---
+// --- OUTILS IMAGE ---
 function getBase64(file) {
     return new Promise((r, j) => {
         const reader = new FileReader();
@@ -46,55 +48,78 @@ async function convertPdfToImage(pdfFile) {
     return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.7));
 }
 
-// --- CONSTRUCTEUR ABC ---
+// --- CONSTRUCTEUR ABC INTELLIGENT ---
 function buildAbcFromVisualData(data) {
     if (!data || !data.notes) return "";
 
     const attr = data.attributes || {};
-    // Utilisation des valeurs du dashboard si disponibles (correction utilisateur)
+    // On utilise les valeurs du dashboard (modifiées par l'utilisateur) en priorité
     const timeSig = metaMeter.value || attr.timeSignature || "4/4";
     const keySig = metaKey.value || attr.keySignature || "C";
     const title = metaTitle.value || "Partition Scannée";
 
     let abc = `X:1\nT:${title}\nM:${timeSig}\nK:${keySig}\nL:1/4\n%%staffwidth 800\n`;
 
-    // Calcul mathématique des barres de mesure
+    // Calcul de la mesure
     let [beats, value] = timeSig.split('/').map(Number);
     if (!beats) { beats=4; value=4; }
-    let measureLimit = beats * (4 / value); // Durée totale en noires
+    // Durée d'une mesure en 'noires' (1.0)
+    let measureLimit = beats * (4 / value); 
+    
     let currentDuration = 0;
 
     data.notes.forEach(note => {
         let abcNote = "";
-        let durationVal = 0;
+        let durationVal = 1; // Valeur par défaut = Noire
 
-        // Pitch
-        let char = note.pitch.toUpperCase();
-        if (note.octave >= 5) char = char.toLowerCase();
-        if (note.octave >= 6) char += "'";
-        if (note.octave <= 3) char += ",";
-        
-        let acc = "";
-        if (note.accidental === "#") acc = "^";
-        if (note.accidental === "b") acc = "_";
-        
-        abcNote += acc + char;
-
-        // Rythme basé sur la FORME visuelle
-        switch (note.visualType) {
-            case "whole": abcNote += "4"; durationVal = 4; break;
-            case "half": abcNote += "2"; durationVal = 2; break;
-            case "quarter": durationVal = 1; break; // Par défaut
-            case "eighth": abcNote += "/2"; durationVal = 0.5; break;
-            case "sixteenth": abcNote += "/4"; durationVal = 0.25; break;
-            default: durationVal = 1; // Sécurité
+        // 1. PITCH (Hauteur)
+        if (note.pitch) {
+            let char = note.pitch.toUpperCase();
+            let oct = note.octave || 4;
+            
+            // Ajustement octave ABC standard
+            if (oct >= 5) char = char.toLowerCase();
+            if (oct >= 6) char += "'";
+            if (oct <= 3) char += ",";
+            
+            let acc = "";
+            if (note.accidental === "#" || note.accidental === "sharp") acc = "^";
+            if (note.accidental === "b" || note.accidental === "flat") acc = "_";
+            if (note.accidental === "n" || note.accidental === "natural") acc = "=";
+            
+            abcNote += acc + char;
+        } else {
+            // Si pas de pitch, c'est peut-être un silence ou une erreur
+            abcNote += "x"; 
         }
 
+        // 2. RYTHME (Tolérance MAJUSCULES/minuscules)
+        // On nettoie le type (enlève les espaces, met en minuscule)
+        let type = (note.visualType || "quarter").toLowerCase().trim();
+
+        if (type.includes("whole") || type.includes("ronde")) {
+            abcNote += "4"; durationVal = 4;
+        } 
+        else if (type.includes("half") || type.includes("blanche")) {
+            abcNote += "2"; durationVal = 2;
+        } 
+        else if (type.includes("eighth") || type.includes("croche")) {
+            abcNote += "/2"; durationVal = 0.5;
+        } 
+        else if (type.includes("sixteenth") || type.includes("double")) {
+            abcNote += "/4"; durationVal = 0.25;
+        } 
+        else {
+            // "quarter", "noire", ou inconnu -> On garde 1 temps
+            durationVal = 1;
+        }
+
+        // Ajout au code global
         abc += abcNote + " ";
         
-        // Ajout automatique des barres |
+        // Gestion Barre de mesure automatique
         currentDuration += durationVal;
-        if (currentDuration >= measureLimit - 0.01) { // Petite marge d'erreur flottante
+        if (currentDuration >= measureLimit - 0.01) {
             abc += "| ";
             currentDuration = 0;
         }
@@ -108,7 +133,7 @@ function buildAbcFromVisualData(data) {
 fileInput.addEventListener('change', async function() {
     if (!fileInput.files.length) return;
     
-    if (uploadText) uploadText.innerHTML = `<strong>Scanner Auto...</strong><br>Recherche du modèle IA compatible 🧠`;
+    if (uploadText) uploadText.innerHTML = `<strong>Scanner...</strong><br>Analyse des formes 👁️`;
     if (uploadZone) uploadZone.style.borderColor = "#00e5ff";
 
     try {
@@ -118,20 +143,9 @@ fileInput.addEventListener('change', async function() {
         if (file.type === 'application/pdf') {
             const blob = await convertPdfToImage(file);
             imgFile = new File([blob], "temp.jpg");
-            if (uploadZone) uploadZone.style.backgroundImage = "none";
-            if (uploadZone) uploadZone.style.backgroundColor = "rgba(0,229,255,0.1)";
+            if (uploadZone) uploadZone.style.background = "rgba(0,229,255,0.1)";
         } else {
             imgFile = await compressImage(file);
-            const reader = new FileReader();
-            reader.onload = e => {
-                if (uploadZone) {
-                    uploadZone.style.backgroundImage = `url(${e.target.result})`;
-                    uploadZone.style.backgroundSize = "contain";
-                    uploadZone.style.backgroundRepeat = "no-repeat";
-                    uploadZone.style.backgroundPosition = "center";
-                }
-            };
-            reader.readAsDataURL(file);
         }
 
         const base64 = await getBase64(imgFile);
@@ -147,16 +161,22 @@ fileInput.addEventListener('change', async function() {
 
         currentMusicData = responseData.musicData;
 
+        // DEBUG : On affiche dans la console ce que l'IA a vu
+        console.log("DONNÉES REÇUES DE L'IA :", currentMusicData);
+
         // Remplissage Dashboard
         if (currentMusicData.attributes) {
-            metaTitle.value = "Partition IA";
+            metaTitle.value = "Partition Scannée";
             metaMeter.value = currentMusicData.attributes.timeSignature || "4/4";
             metaKey.value = currentMusicData.attributes.keySignature || "C";
         }
 
-        if (uploadText) uploadText.innerHTML = `<strong>Scan Terminé !</strong><br>Vérifiez les données.<br><button onclick="window.location.reload()" style="background:#333;color:white;border:none;padding:5px;margin-top:5px;cursor:pointer">❌ Annuler</button>`;
+        if (uploadText) uploadText.innerHTML = `<strong>Scan Terminé !</strong><br><button onclick="window.location.reload()" style="background:#333;color:white;border:none;padding:5px;margin-top:5px;cursor:pointer">❌ Annuler</button>`;
         if (uploadZone) uploadZone.style.borderColor = "#00ff00";
         if (dashboard) dashboard.style.display = "grid";
+
+        // Déclenche une pré-transposition pour voir si ça marche direct
+        document.getElementById('transpose-btn').click();
 
     } catch (e) {
         if (uploadText) uploadText.innerHTML = `Erreur : ${e.message} <br><button onclick="window.location.reload()">Réessayer</button>`;
@@ -167,7 +187,10 @@ fileInput.addEventListener('change', async function() {
 
 // --- TRANSPOSITION ---
 transposeBtn.addEventListener('click', function() {
-    if (!currentMusicData) { alert("Aucune donnée !"); return; }
+    if (!currentMusicData) { 
+        alert("Les données sont vides. L'IA n'a rien renvoyé."); 
+        return; 
+    }
 
     const instrumentKey = document.getElementById('transposition').value;
     const instrumentName = document.getElementById('transposition').options[document.getElementById('transposition').selectedIndex].text;
@@ -179,6 +202,9 @@ transposeBtn.addEventListener('click', function() {
 
     // CONSTRUCTION DU CODE
     const abcCode = buildAbcFromVisualData(currentMusicData);
+    
+    // DEBUG : Afficher le code généré dans la console
+    console.log("CODE ABC GÉNÉRÉ :", abcCode);
 
     document.getElementById('final-title').innerText = "Résultat : " + instrumentName;
     resultZone.style.display = "block";
