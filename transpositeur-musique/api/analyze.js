@@ -1,9 +1,11 @@
 // api/analyze.js
-// VERSION : VISION GÉOMÉTRIQUE (Focalisation sur les symboles visuels)
+// VERSION : RECONNAISSANCE VISUELLE DES FORMES (RYTHME)
 
 export const config = {
     api: {
-        bodyParser: { sizeLimit: '4mb' },
+        bodyParser: {
+            sizeLimit: '4mb',
+        },
     },
 };
 
@@ -15,9 +17,9 @@ export default async function handler(req, res) {
 
     try {
         const { image, mimeType } = req.body;
-        if (!image) return res.status(400).json({ error: 'Aucune image' });
+        if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        // On reprend le scanner de modèles qui fonctionnait
+        // 1. SCANNER DE MODÈLES
         const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
         const listResp = await fetch(listUrl);
         const listData = await listResp.json();
@@ -26,33 +28,40 @@ export default async function handler(req, res) {
         let chosenModel = models.find(m => m.name.includes("flash") && !m.name.includes("2.0") && m.supportedGenerationMethods.includes("generateContent"));
         if (!chosenModel) chosenModel = models.find(m => m.name.includes("pro") && !m.name.includes("2.0"));
         if (!chosenModel) chosenModel = models[0];
+
         const modelName = chosenModel.name.replace("models/", "");
 
-        // --- NOUVEAU PROMPT VISUEL ---
-        // On demande à l'IA de décrire les symboles avant d'écrire le code.
+        // 2. CONSIGNE "DICTIONNAIRE VISUEL"
+        // On apprend à l'IA à traduire les formes en code ABC
         const requestBody = {
             contents: [{
                 parts: [
                     { text: `
-                        Task: Transcribe this sheet music image to ABC Notation.
+                        Transcribe this sheet music to ABC Notation.
                         
-                        FOCUS ON VISUAL SYMBOLS:
-                        1. **Time Signature**: Look at the start. Do you see two stacked numbers?
-                           - If top is 2 and bottom is 4, write M:2/4.
-                           - If top is 6 and bottom is 8, write M:6/8.
-                           - Do NOT default to 4/4 unless you see a 'C' or 4/4.
+                        --- VISUAL DICTIONARY FOR RHYTHM (CRITICAL) ---
+                        Look closely at the note heads and stems:
                         
-                        2. **Note Duration (Visual recognition)**:
-                           - Note with **Solid Head** + **Stem** + **No Flag** = Quarter Note (Noire) -> ABC: C
-                           - Note with **Solid Head** + **Stem** + **One Flag/Beam** = Eighth Note (Croche) -> ABC: C/2
-                           - Note with **Solid Head** + **Stem** + **Two Flags/Beams** = Sixteenth Note (Double-croche) -> ABC: C/4
-                           - Note with **Hollow Head** + **Stem** = Half Note (Blanche) -> ABC: C2
+                        1. **HOLLOW HEAD (Tête Blanche)**:
+                           - Usually a Half Note (Blanche).
+                           - RULE: You MUST add '2' after the note letter. (e.g., C2, D2).
                         
-                        3. **Rhythm Check**:
-                           - Ensure the total duration of notes inside two '|' bars equals the Time Signature.
+                        2. **SOLID HEAD (Tête Noire) + STEM (Tige)**:
+                           - Usually a Quarter Note (Noire).
+                           - RULE: Write just the letter. (e.g., C, D).
                         
-                        OUTPUT:
-                        Return ONLY the ABC code block starting with X:1.
+                        3. **SOLID HEAD + FLAG/BEAM (Drapeau/Barre)**:
+                           - Usually an Eighth Note (Croche) or Sixteenth.
+                           - RULE: You MUST add '/2' or '/4' after the note. (e.g., C/2, D/2).
+                           - Look at groups of notes connected by a thick line (beam) -> These are /2.
+                        
+                        4. **DOTS (Points)**:
+                           - If a note has a dot '.' next to it, add '3/2' (if solid) or '3' (if hollow).
+
+                        --- STRUCTURE ---
+                        - Detect Time Signature (M:).
+                        - Detect Key Signature (K:).
+                        - Output ONLY the ABC code starting with X:1.
                     `},
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
@@ -75,14 +84,14 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
-        if (data.error) return res.status(500).json({ error: "Erreur Google : " + data.error.message });
+        if (data.error) return res.status(500).json({ error: `Erreur Google : ` + data.error.message });
         
         if (data.candidates && data.candidates[0].content) {
             let abcCode = data.candidates[0].content.parts[0].text;
             abcCode = abcCode.replace(/```abc/gi, "").replace(/```/g, "").trim();
             return res.status(200).json({ abc: abcCode });
         } else {
-            return res.status(500).json({ error: "L'IA n'a pas pu lire la partition." });
+            return res.status(500).json({ error: "L'IA n'a pas trouvé de partition." });
         }
 
     } catch (error) {
