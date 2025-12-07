@@ -1,5 +1,5 @@
 // api/analyze.js
-// VERSION : AUTO-DÉTECTION DU MODÈLE + SCANNER OPTIQUE
+// VERSION : SCIENTIFIC PITCH & DURATION
 
 export const config = {
     api: {
@@ -17,92 +17,85 @@ export default async function handler(req, res) {
         const { image, mimeType } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        // --- 1. DÉCOUVERTE AUTOMATIQUE DU MODÈLE ---
-        // On demande à Google : "Quels modèles sont dispos pour cette clé ?"
+        // Scan automatique du modèle
         const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
         const listResp = await fetch(listUrl);
         const listData = await listResp.json();
-
-        if (listData.error) {
-            return res.status(500).json({ error: "Impossible de lister les modèles : " + listData.error.message });
-        }
-
-        const allModels = listData.models || [];
+        const models = listData.models || [];
         
-        // On filtre pour trouver un modèle :
-        // 1. Qui accepte "generateContent" (Vision/Texte)
-        // 2. Qui n'est PAS le 2.0 (car quota trop faible)
-        // 3. Qui n'est PAS "gemini-pro" tout court (car il ne voit pas les images)
-        const validModels = allModels.filter(m => 
-            m.supportedGenerationMethods.includes("generateContent") && 
-            !m.name.includes("2.0") &&
-            !m.name.endsWith("gemini-pro") 
-        );
-
-        // On essaie de trouver un "Flash", sinon un "Pro", sinon le premier qui vient
-        let chosenModel = validModels.find(m => m.name.includes("flash"));
-        if (!chosenModel) chosenModel = validModels.find(m => m.name.includes("1.5-pro"));
-        if (!chosenModel) chosenModel = validModels[0];
-
-        if (!chosenModel) {
-            return res.status(500).json({ error: "Aucun modèle compatible trouvé pour votre clé." });
-        }
-
-        // On nettoie le nom (ex: "models/gemini-1.5-flash-001" -> "gemini-1.5-flash-001")
+        let chosenModel = models.find(m => m.name.includes("flash") && !m.name.includes("2.0") && m.supportedGenerationMethods.includes("generateContent"));
+        if (!chosenModel) chosenModel = models.find(m => m.name.includes("pro") && !m.name.includes("2.0"));
+        if (!chosenModel) chosenModel = models[0];
         const modelName = chosenModel.name.replace("models/", "");
 
-        // --- 2. ANALYSE VISUELLE (APPROCHE KLANG) ---
+        // --- PROMPT SCIENTIFIQUE ---
         const promptText = `
-            Act as an Optical Music Recognition (OMR) engine.
-            Task: Extract visual data about notes.
-
-            RETURN JSON ONLY using this schema:
+            Analyze this sheet music image.
+            
+            TASK: Extract every single note in reading order (left to right).
+            
+            RETURN JSON format:
             {
                 "attributes": {
-                    "keySignature": "G", // Count sharps/flats. 1# = G.
+                    "keySignature": "G", // e.g., C, G, D, F...
                     "timeSignature": "4/4"
                 },
                 "notes": [
-                    {
-                        "pitch": "C", // Note name
-                        "octave": 4, 
-                        "accidental": "", // "#", "b", or ""
-                        "visualType": "quarter" // CRITICAL: Identify by SHAPE.
-                    }
+                    { "pitch": "C4", "duration": 1.0 },
+                    { "pitch": "D4", "duration": 0.5 },
+                    { "pitch": "F#4", "duration": 2.0 }
                 ]
             }
 
-            VISUAL RULES FOR "visualType":
-            - Hollow head (vide) = "half" (Blanche) or "whole" (Ronde).
-            - Solid head (pleine) + Stem (tige) = "quarter" (Noire).
-            - Solid head + Flag/Beam (barre) = "eighth" (Croche).
+            DATA RULES:
+            1. **PITCH**: Use Scientific Pitch Notation (e.g., C4 = Middle C). 
+               - Be precise about vertical position on the staff lines.
+               - Include accidentals (#/b) directly in the pitch string if written next to the note.
+            
+            2. **DURATION (Decimal)**:
+               - Quarter Note (Noire) = 1.0
+               - Half Note (Blanche) = 2.0
+               - Eighth Note (Croche) = 0.5
+               - Whole Note (Ronde) = 4.0
+               - Dotted Quarter = 1.5
+               - Dotted Half = 3.0
+
+            Ignore text lyrics. Focus on note heads.
         `;
+
+        const requestBody = {
+            contents: [{
+                parts: [
+                    { text: promptText },
+                    { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
+                ]
+            }],
+            safetySettings: [
+                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+            ],
+            generationConfig: { response_mime_type: "application/json" }
+        };
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [
-                        { text: promptText },
-                        { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
-                    ]
-                }],
-                generationConfig: { response_mime_type: "application/json" }
-            })
+            body: JSON.stringify(requestBody)
         });
 
         const data = await response.json();
 
-        if (data.error) return res.status(500).json({ error: `Erreur Google (${modelName}) : ` + data.error.message });
+        if (data.error) return res.status(500).json({ error: `Erreur Google : ` + data.error.message });
         
         if (data.candidates && data.candidates[0].content) {
             const jsonText = data.candidates[0].content.parts[0].text;
             return res.status(200).json({ musicData: JSON.parse(jsonText) });
         } else {
-            return res.status(500).json({ error: "L'IA n'a rien vu." });
+            return res.status(500).json({ error: "L'IA n'a rien lu." });
         }
 
     } catch (error) {
