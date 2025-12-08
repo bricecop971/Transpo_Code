@@ -3,45 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transpositeur IA - Final</title>
+    <title>Transpositeur IA - Debug Mode</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
 
     <style>
-        body { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; text-align: center; margin: 0; padding: 20px; }
-        .container { max-width: 800px; margin: 0 auto; }
+        body { background-color: #121212; color: #e0e0e0; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
         
-        .upload-zone { 
-            border: 2px dashed #00e5ff; padding: 40px; margin: 20px 0;
-            background: rgba(0,229,255,0.05); cursor: pointer; border-radius: 10px;
-        }
-        
-        #dashboard { display: none; background: #1e1e1e; padding: 20px; border-radius: 10px; border: 1px solid #333; margin-bottom: 20px; }
+        .upload-zone { border: 2px dashed #00e5ff; padding: 30px; margin: 20px 0; background: rgba(0,229,255,0.05); cursor: pointer; border-radius: 10px; }
+        .upload-zone:hover { background: rgba(0,229,255,0.1); }
+
+        #dashboard { display: none; background: #1e1e1e; padding: 20px; border-radius: 10px; border: 1px solid #333; }
         .dash-row { display: flex; gap: 10px; justify-content: space-between; margin-bottom: 15px; }
-        .dash-card { flex: 1; background: #111; padding: 10px; border-radius: 5px; text-align: left; border: 1px solid #444; }
+        .dash-card { flex: 1; background: #111; padding: 10px; border-radius: 5px; text-align: left; }
         .dash-card label { font-size: 11px; color: #888; display: block; margin-bottom: 5px; text-transform: uppercase; }
         .dash-card input { width: 100%; background: transparent; border: none; color: #00e5ff; font-weight: bold; font-size: 16px; outline: none; }
 
-        button { cursor: pointer; padding: 12px 24px; border-radius: 5px; border: none; font-weight: bold; font-size: 16px; margin: 5px; }
+        button { cursor: pointer; padding: 10px 20px; border-radius: 5px; border: none; font-weight: bold; margin: 5px; }
         .btn-primary { background: #00e5ff; color: black; }
         .btn-danger { background: #d32f2f; color: white; }
         
-        /* IMPORTANT : Le papier doit être blanc pour voir les notes */
-        #paper { background: white; color: black; padding: 15px; border-radius: 5px; margin-top: 20px; overflow-x: auto; min-height: 150px; }
+        #result-zone { display: none; margin-top: 30px; }
+        #paper { background: white; color: black; padding: 15px; border-radius: 5px; margin-top: 20px; overflow-x: auto; min-height: 100px; }
         #paper svg { width: 100%; }
         #paper svg path { fill: #000000 !important; }
 
-        #debug-console { margin-top: 50px; background: #000; color: #ff5555; font-family: monospace; padding: 10px; text-align: left; font-size: 12px; display: none; white-space: pre-wrap; }
+        /* ZONE DEBUG IMPORTANTE */
+        #raw-data-container {
+            text-align: left;
+            background: #000;
+            color: #0f0;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 11px;
+            height: 150px;
+            overflow-y: scroll;
+            border: 1px solid #333;
+            margin-top: 10px;
+            white-space: pre-wrap;
+        }
+        
+        /* Audio fix */
+        .abcjs-inline-audio { background: #222; border: 1px solid #444; border-radius: 5px; padding: 5px; margin-top: 10px; display: flex; justify-content: center; }
+        .abcjs-btn { background: #00e5ff; color: black; border-radius: 3px; padding: 2px 6px; border: none; margin: 0 2px; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <header>
-            <h1>🎼 Transpositeur IA</h1>
-        </header>
+        <header><h1>🎼 Transpositeur IA</h1></header>
 
         <div class="upload-zone" onclick="document.getElementById('file-input').click()">
             <p id="upload-text">📂 Cliquez ici pour charger une partition</p>
@@ -49,19 +62,20 @@
         </div>
 
         <div id="dashboard">
-            <h3 style="margin-top:0; color:#aaa; font-size:14px;">DONNÉES DÉTECTÉES</h3>
+            <h3 style="margin-top:0; color:#aaa; font-size:14px;">DONNÉES MUSICALES</h3>
+            
             <div class="dash-row">
-                <div class="dash-card"><label>Titre</label><input type="text" id="meta-title"></div>
-                <div class="dash-card"><label>Mesure (M:)</label><input type="text" id="meta-meter"></div>
-                <div class="dash-card"><label>Tonalité (K:)</label><input type="text" id="meta-key"></div>
+                <div class="dash-card"><label>Titre</label><input type="text" id="meta-title" value="Partition IA"></div>
+                <div class="dash-card"><label>Mesure</label><input type="text" id="meta-meter"></div>
+                <div class="dash-card"><label>Tonalité</label><input type="text" id="meta-key"></div>
             </div>
 
-            <div style="margin-top: 20px; text-align: left;">
-    <h4 style="color:#aaa;">Données brutes JSON renvoyées par l'IA :</h4>
-    <pre id="raw-data-container" style="background: #000; color: #00ff00; padding: 10px; border-radius: 5px; overflow-x: auto; font-size: 12px; max-height: 200px;"></pre>
-</div>
+            <div style="margin-top: 20px;">
+                <label style="color:#aaa; font-size:12px;">🔴 DEBUG: DONNÉES BRUTES REÇUES</label>
+                <pre id="raw-data-container">En attente de l'analyse...</pre>
+            </div>
 
-            <div style="border-top: 1px solid #444; padding-top: 15px;">
+            <div style="border-top: 1px solid #444; padding-top: 15px; margin-top: 20px;">
                 <label style="color:#aaa; margin-right: 10px;">Transposer vers : </label>
                 <select id="transposition" style="padding: 8px; background: #333; color: white; border: 1px solid #555; border-radius: 4px;">
                     <option value="Eb">Saxophone Alto (Eb)</option>
@@ -73,7 +87,7 @@
             </div>
         </div>
 
-        <div id="result-zone" style="display:none;">
+        <div id="result-zone">
             <h2 id="final-title">Résultat</h2>
             <div id="audio"></div>
             <div id="paper"></div>
@@ -82,16 +96,7 @@
         </div>
     </div>
 
-    <div id="debug-console"></div>
-
     <script>
-        const debugBox = document.getElementById('debug-console');
-        function logError(msg) {
-            debugBox.style.display = 'block';
-            debugBox.innerHTML += "🔴 " + msg + "\n";
-            console.error(msg);
-        }
-
         const fileInput = document.getElementById('file-input');
         const uploadText = document.getElementById('upload-text');
         const dashboard = document.getElementById('dashboard');
@@ -100,6 +105,7 @@
         const metaMeter = document.getElementById('meta-meter');
         const metaKey = document.getElementById('meta-key');
         const transposeBtn = document.getElementById('transpose-btn');
+        const rawDataBox = document.getElementById('raw-data-container');
 
         let currentMusicData = null;
 
@@ -139,18 +145,17 @@
             return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
         }
 
-        // --- MOTEUR DE RECONSTRUCTION ABC (CORRIGÉ) ---
+        // --- CONSTRUCTEUR ABC ---
         function buildAbc(data) {
             if (!data || !data.notes) return "";
             const attr = data.attributes || {};
             
-            const T = metaTitle.value || "Partition IA";
+            const T = metaTitle.value;
             const M = metaMeter.value || attr.timeSignature || "4/4";
             const K = metaKey.value || attr.keySignature || "C";
 
             let abc = `X:1\nT:${T}\nM:${M}\nK:${K}\nL:1/4\n%%staffwidth 800\n`;
 
-            // Calcul mathématique des barres
             let [beats, val] = M.split('/').map(Number);
             if (!beats) { beats=4; val=4; }
             let measureMax = beats * (4/val); 
@@ -160,12 +165,10 @@
                 let noteStr = "";
                 let dur = 1;
 
-                // --- CORRECTION MAJEURE : GESTION DES SILENCES ---
-                if (!n.pitch || n.pitch.toLowerCase() === "rest") {
-                    noteStr = "z"; // Code ABC pour le silence
-                } 
-                else {
-                    // Note normale
+                // Pitch
+                if (!n.pitch || n.pitch === "rest") {
+                    noteStr = "z";
+                } else {
                     let p = n.pitch.toUpperCase().replace(/[0-9]/g, '');
                     let oct = parseInt(n.pitch.replace(/[^0-9]/g, '')) || 4;
                     
@@ -176,22 +179,19 @@
 
                     if (n.pitch.includes("#")) char = "^" + char.replace("#","");
                     if (n.pitch.includes("b")) char = "_" + char.replace("b","");
-                    
                     noteStr = char;
                 }
 
-                // --- DUREE ---
+                // Durée
                 let type = (n.visualType || "quarter").toLowerCase();
-                
                 if (type.includes("whole")) { noteStr += "4"; dur = 4; }
                 else if (type.includes("half")) { noteStr += "2"; dur = 2; }
                 else if (type.includes("eighth")) { noteStr += "/2"; dur = 0.5; }
                 else if (type.includes("sixteenth")) { noteStr += "/4"; dur = 0.25; }
-                else { dur = 1; } 
+                else { dur = 1; }
 
                 abc += noteStr + " ";
                 
-                // Barre auto
                 currentCount += dur;
                 if (currentCount >= measureMax - 0.01) {
                     abc += "| ";
@@ -203,10 +203,10 @@
             return abc;
         }
 
-        // --- LOGIQUE ---
+        // --- CHARGEMENT ---
         fileInput.addEventListener('change', async function() {
             if (!fileInput.files.length) return;
-            uploadText.innerHTML = "⏳ Analyse en cours... (Patientez)";
+            uploadText.innerHTML = "⏳ Analyse en cours...";
             
             try {
                 let file = fileInput.files[0];
@@ -226,7 +226,7 @@
 
                 if (!res.ok) {
                     const txt = await res.text();
-                    throw new Error(`Erreur API (${res.status})`);
+                    throw new Error(`Erreur API (${res.status}): ${txt}`);
                 }
 
                 const responseData = await res.json();
@@ -234,21 +234,22 @@
 
                 currentMusicData = responseData.musicData;
                 
-                // Remplir Dashboard
+                // AFFICHER LES DONNÉES BRUTES (DEBUG)
+                rawDataBox.textContent = JSON.stringify(currentMusicData, null, 2);
+
                 const attr = currentMusicData.attributes || {};
-                metaTitle.value = "Partition Analysée";
                 metaMeter.value = attr.timeSignature || "4/4";
                 metaKey.value = attr.keySignature || "C";
 
                 document.querySelector('.upload-zone').style.display = 'none';
                 dashboard.style.display = 'block';
                 
-                // On force le clic pour afficher direct !
-                setTimeout(() => transposeBtn.click(), 500);
+                transposeBtn.click();
 
             } catch (e) {
                 uploadText.innerHTML = "❌ Erreur (voir logs)";
-                logError(e.message);
+                alert("Erreur : " + e.message);
+                console.error(e);
             }
         });
 
@@ -264,9 +265,6 @@
 
             const abcCode = buildAbc(currentMusicData);
             
-            // DEBUG : Afficher le code généré si besoin
-            console.log("ABC CODE:", abcCode);
-
             document.getElementById('final-title').innerText = "Résultat : " + instName;
             resultZone.style.display = 'block';
 
@@ -286,4 +284,3 @@
     </script>
 </body>
 </html>
-
