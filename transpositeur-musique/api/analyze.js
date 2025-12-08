@@ -1,3 +1,6 @@
+// api/analyze.js
+// VERSION : STRUCTURELLE RAPIDE (Anti-Timeout)
+
 export const config = {
     api: {
         bodyParser: { sizeLimit: '4mb' },
@@ -14,6 +17,8 @@ export default async function handler(req, res) {
         const { image, mimeType } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
+        // 1. SÉLECTION DU MODÈLE
+        // On vise Flash 1.5 pour la vitesse
         const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
         const listResp = await fetch(listUrl);
         const listData = await listResp.json();
@@ -25,25 +30,28 @@ export default async function handler(req, res) {
 
         const modelName = chosenModel.name.replace("models/", "");
 
+        // 2. PROMPT "SCANNER STRUCTUREL" (Plus rapide)
         const promptText = `
-            Act as an Optical Music Recognition (OMR) engine.
-            TASK: Extract visual data about notes.
-            RETURN JSON ONLY using this schema:
+            Analyze this sheet music image.
+            
+            TASK: Extract notes measure by measure.
+            
+            OUTPUT JSON FORMAT:
             {
-                "attributes": {
-                    "keySignature": "C", 
-                    "timeSignature": "4/4"
-                },
-                "notes": [
-                    {
-                        "pitch": "C4", 
-                        "visualType": "quarter" 
-                    }
+                "attributes": { "keySignature": "C", "timeSignature": "4/4" },
+                "measures": [
+                    [ {"p": "C4", "d": 1.0}, {"p": "rest", "d": 1.0} ], // Measure 1
+                    [ {"p": "G4", "d": 2.0} ] // Measure 2
                 ]
             }
+
             RULES:
-            - visualType must be: "whole", "half", "quarter", "eighth", "sixteenth".
-            - Pitch must be Scientific (e.g. C4, F#5).
+            - "p": Pitch (e.g. C4, D#5) OR "rest" (silence).
+            - "d": Duration value based on shape:
+               - Hollow head (Blanche/Ronde) -> 2.0 or 4.0
+               - Solid head (Noire) -> 1.0
+               - Flag/Beam (Croche) -> 0.5
+            - Split the array into sub-arrays for each measure (bar line).
         `;
 
         const requestBody = {
@@ -53,6 +61,12 @@ export default async function handler(req, res) {
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
             }],
+            safetySettings: [
+                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+            ],
             generationConfig: { response_mime_type: "application/json" }
         };
 
@@ -72,7 +86,7 @@ export default async function handler(req, res) {
             const jsonText = data.candidates[0].content.parts[0].text;
             return res.status(200).json({ musicData: JSON.parse(jsonText) });
         } else {
-            return res.status(500).json({ error: "L'IA n'a rien vu." });
+            return res.status(500).json({ error: "L'IA n'a rien lu." });
         }
 
     } catch (error) {
