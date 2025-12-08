@@ -3,80 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transpositeur IA - Version Monolithe</title>
+    <title>Transpositeur IA - Final</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-    <script>
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-    </script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
 
     <style>
         body { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; text-align: center; margin: 0; padding: 20px; }
-        
         .container { max-width: 800px; margin: 0 auto; }
         
-        /* Upload */
         .upload-zone { 
-            border: 2px dashed #00e5ff; 
-            padding: 40px; 
-            margin: 20px 0;
-            background: rgba(0,229,255,0.05); 
-            cursor: pointer; 
-            border-radius: 10px;
-            transition: 0.3s;
+            border: 2px dashed #00e5ff; padding: 40px; margin: 20px 0;
+            background: rgba(0,229,255,0.05); cursor: pointer; border-radius: 10px;
         }
-        .upload-zone:hover { background: rgba(0,229,255,0.1); transform: scale(1.01); }
-
-        /* Dashboard */
+        
         #dashboard { display: none; background: #1e1e1e; padding: 20px; border-radius: 10px; border: 1px solid #333; margin-bottom: 20px; }
         .dash-row { display: flex; gap: 10px; justify-content: space-between; margin-bottom: 15px; }
         .dash-card { flex: 1; background: #111; padding: 10px; border-radius: 5px; text-align: left; border: 1px solid #444; }
         .dash-card label { font-size: 11px; color: #888; display: block; margin-bottom: 5px; text-transform: uppercase; }
         .dash-card input { width: 100%; background: transparent; border: none; color: #00e5ff; font-weight: bold; font-size: 16px; outline: none; }
 
-        /* Boutons */
-        button { cursor: pointer; padding: 12px 24px; border-radius: 5px; border: none; font-weight: bold; font-size: 16px; margin: 5px; transition: 0.2s; }
-        .btn-primary { background: #00e5ff; color: black; box-shadow: 0 0 10px rgba(0,229,255,0.3); }
-        .btn-primary:hover { background: white; }
+        button { cursor: pointer; padding: 12px 24px; border-radius: 5px; border: none; font-weight: bold; font-size: 16px; margin: 5px; }
+        .btn-primary { background: #00e5ff; color: black; }
         .btn-danger { background: #d32f2f; color: white; }
         
-        /* Résultats */
-        #result-zone { display: none; margin-top: 30px; }
-        #paper { background: white; color: black; padding: 15px; border-radius: 5px; margin-top: 20px; overflow-x: auto; min-height: 100px; }
+        /* IMPORTANT : Le papier doit être blanc pour voir les notes */
+        #paper { background: white; color: black; padding: 15px; border-radius: 5px; margin-top: 20px; overflow-x: auto; min-height: 150px; }
         #paper svg { width: 100%; }
-        #paper svg path { fill: #000000 !important; } /* Force le noir */
+        #paper svg path { fill: #000000 !important; }
 
-        /* Console de debug pour l'utilisateur */
-        #debug-console {
-            margin-top: 50px;
-            background: #000;
-            color: #ff5555;
-            font-family: monospace;
-            padding: 10px;
-            border-top: 1px solid #333;
-            text-align: left;
-            font-size: 12px;
-            display: none; /* Caché sauf si erreur */
-            white-space: pre-wrap;
-        }
+        #debug-console { margin-top: 50px; background: #000; color: #ff5555; font-family: monospace; padding: 10px; text-align: left; font-size: 12px; display: none; white-space: pre-wrap; }
     </style>
 </head>
 <body>
 
     <div class="container">
         <header>
-            <h1>🎼 Transpositeur IA Ultimate</h1>
-            <p>Analyse visuelle & mathématique</p>
+            <h1>🎼 Transpositeur IA</h1>
         </header>
 
         <div class="upload-zone" onclick="document.getElementById('file-input').click()">
-            <p id="upload-text">📂 <strong>Cliquez ici</strong> pour charger une partition (PDF ou Image)</p>
+            <p id="upload-text">📂 Cliquez ici pour charger une partition</p>
             <input type="file" id="file-input" accept="image/*,.pdf" style="display:none;">
         </div>
 
         <div id="dashboard">
-            <h3 style="margin-top:0; color:#aaa; font-size:14px;">DONNÉES DÉTECTÉES (Modifiables)</h3>
+            <h3 style="margin-top:0; color:#aaa; font-size:14px;">DONNÉES DÉTECTÉES</h3>
             <div class="dash-row">
                 <div class="dash-card"><label>Titre</label><input type="text" id="meta-title"></div>
                 <div class="dash-card"><label>Mesure (M:)</label><input type="text" id="meta-meter"></div>
@@ -91,11 +64,11 @@
                     <option value="F">Cor (F)</option>
                     <option value="C" selected>Piano / Flûte (C)</option>
                 </select>
-                <button id="transpose-btn" class="btn-primary">Transposer</button>
+                <button id="transpose-btn" class="btn-primary">Générer la Partition</button>
             </div>
         </div>
 
-        <div id="result-zone">
+        <div id="result-zone" style="display:none;">
             <h2 id="final-title">Résultat</h2>
             <div id="audio"></div>
             <div id="paper"></div>
@@ -107,24 +80,17 @@
     <div id="debug-console"></div>
 
     <script>
-        // -- SYSTEME DE LOG D'ERREUR --
         const debugBox = document.getElementById('debug-console');
         function logError(msg) {
             debugBox.style.display = 'block';
             debugBox.innerHTML += "🔴 " + msg + "\n";
             console.error(msg);
         }
-        window.onerror = function(msg, url, line) {
-            logError(`Erreur Script: ${msg} (Ligne ${line})`);
-        };
 
-        // -- SÉLECTEURS --
         const fileInput = document.getElementById('file-input');
         const uploadText = document.getElementById('upload-text');
         const dashboard = document.getElementById('dashboard');
         const resultZone = document.getElementById('result-zone');
-        
-        // Inputs
         const metaTitle = document.getElementById('meta-title');
         const metaMeter = document.getElementById('meta-meter');
         const metaKey = document.getElementById('meta-key');
@@ -132,7 +98,7 @@
 
         let currentMusicData = null;
 
-        // -- OUTILS IMAGE --
+        // --- OUTILS ---
         function getBase64(file) {
             return new Promise((r, j) => {
                 const reader = new FileReader();
@@ -143,48 +109,36 @@
         }
 
         async function compressImage(file) {
-            try {
-                const bitmap = await createImageBitmap(file);
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                // 2000px max pour la précision
-                const scale = Math.min(2000 / bitmap.width, 1);
-                canvas.width = bitmap.width * scale;
-                canvas.height = bitmap.height * scale;
-                ctx.fillStyle = "white";
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-                return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
-            } catch (e) {
-                logError("Erreur Compression: " + e.message);
-                throw e;
-            }
+            const bitmap = await createImageBitmap(file);
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const scale = Math.min(2000 / bitmap.width, 1);
+            canvas.width = bitmap.width * scale;
+            canvas.height = bitmap.height * scale;
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+            return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
         }
 
         async function convertPdfToImage(pdfFile) {
-            try {
-                const arrayBuffer = await pdfFile.arrayBuffer();
-                const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-                const page = await pdf.getPage(1);
-                const viewport = page.getViewport({ scale: 2.0 });
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
-                await page.render({ canvasContext: context, viewport: viewport }).promise;
-                return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
-            } catch (e) {
-                logError("Erreur PDF: " + e.message);
-                throw e;
-            }
+            const arrayBuffer = await pdfFile.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+            const page = await pdf.getPage(1);
+            const viewport = page.getViewport({ scale: 2.0 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+            return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
         }
 
-        // -- MOTEUR DE RECONSTRUCTION ABC --
+        // --- MOTEUR DE RECONSTRUCTION ABC (CORRIGÉ) ---
         function buildAbc(data) {
             if (!data || !data.notes) return "";
             const attr = data.attributes || {};
             
-            // Valeurs prioritaires du dashboard
             const T = metaTitle.value || "Partition IA";
             const M = metaMeter.value || attr.timeSignature || "4/4";
             const K = metaKey.value || attr.keySignature || "C";
@@ -201,35 +155,34 @@
                 let noteStr = "";
                 let dur = 1;
 
-                // 1. PITCH
-                if (n.pitch) {
-                    // ex: "C#4"
+                // --- CORRECTION MAJEURE : GESTION DES SILENCES ---
+                if (!n.pitch || n.pitch.toLowerCase() === "rest") {
+                    noteStr = "z"; // Code ABC pour le silence
+                } 
+                else {
+                    // Note normale
                     let p = n.pitch.toUpperCase().replace(/[0-9]/g, '');
                     let oct = parseInt(n.pitch.replace(/[^0-9]/g, '')) || 4;
                     
-                    // Conversion octave ABC
                     let char = p;
                     if (oct <= 3) char += ",";
                     if (oct === 5) char = char.toLowerCase();
                     if (oct >= 6) char = char.toLowerCase() + "'";
 
-                    // Altérations
                     if (n.pitch.includes("#")) char = "^" + char.replace("#","");
                     if (n.pitch.includes("b")) char = "_" + char.replace("b","");
                     
                     noteStr = char;
-                } else {
-                    noteStr = "x"; // Note inconnue
                 }
 
-                // 2. RYTHME (Visual Type)
+                // --- DUREE ---
                 let type = (n.visualType || "quarter").toLowerCase();
                 
                 if (type.includes("whole")) { noteStr += "4"; dur = 4; }
                 else if (type.includes("half")) { noteStr += "2"; dur = 2; }
                 else if (type.includes("eighth")) { noteStr += "/2"; dur = 0.5; }
                 else if (type.includes("sixteenth")) { noteStr += "/4"; dur = 0.25; }
-                else { dur = 1; } // Quarter par défaut
+                else { dur = 1; } 
 
                 abc += noteStr + " ";
                 
@@ -245,16 +198,14 @@
             return abc;
         }
 
-        // -- EVENEMENTS --
+        // --- LOGIQUE ---
         fileInput.addEventListener('change', async function() {
             if (!fileInput.files.length) return;
-            
-            uploadText.innerHTML = "⏳ <strong>Analyse en cours...</strong><br>(Cela peut prendre 10s)";
+            uploadText.innerHTML = "⏳ Analyse en cours... (Patientez)";
             
             try {
                 let file = fileInput.files[0];
                 let imgFile;
-
                 if (file.type === 'application/pdf') {
                     imgFile = await convertPdfToImage(file);
                 } else {
@@ -262,7 +213,6 @@
                 }
 
                 const base64 = await getBase64(imgFile);
-                
                 const res = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -271,13 +221,12 @@
 
                 if (!res.ok) {
                     const txt = await res.text();
-                    throw new Error(`Erreur API (${res.status}): ${txt}`);
+                    throw new Error(`Erreur API (${res.status})`);
                 }
 
                 const responseData = await res.json();
                 if (responseData.error) throw new Error(responseData.error);
 
-                // SUCCÈS
                 currentMusicData = responseData.musicData;
                 
                 // Remplir Dashboard
@@ -289,13 +238,12 @@
                 document.querySelector('.upload-zone').style.display = 'none';
                 dashboard.style.display = 'block';
                 
-                // Auto-affichage
-                transposeBtn.click();
+                // On force le clic pour afficher direct !
+                setTimeout(() => transposeBtn.click(), 500);
 
             } catch (e) {
-                uploadText.innerHTML = "❌ Erreur (voir bas de page)";
+                uploadText.innerHTML = "❌ Erreur (voir logs)";
                 logError(e.message);
-                alert("Oups ! Une erreur est survenue : " + e.message);
             }
         });
 
@@ -310,7 +258,9 @@
             if (keySelect.value === "F") visualTranspose = 7;
 
             const abcCode = buildAbc(currentMusicData);
-            console.log("Code ABC généré :", abcCode);
+            
+            // DEBUG : Afficher le code généré si besoin
+            console.log("ABC CODE:", abcCode);
 
             document.getElementById('final-title').innerText = "Résultat : " + instName;
             resultZone.style.display = 'block';
@@ -321,7 +271,6 @@
                 add_classes: true
             });
             
-            // Audio simple (si dispo)
             if (ABCJS.synth.supportsAudio()) {
                 const synth = new ABCJS.synth.SynthController();
                 synth.load("#audio", null, { displayLoop: true, displayPlay: true, displayProgress: true });
@@ -329,8 +278,6 @@
                 createSynth.init({ visualObj: visualObj[0] }).then(() => synth.setTune(visualObj[0], false));
             }
         });
-
-        console.log("Système prêt.");
     </script>
 </body>
 </html>
