@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transpositeur Universel (MusicXML)</title>
+    <title>Scanner Intégré MusicXML</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/opensheetmusicdisplay/1.8.8/opensheetmusicdisplay.min.js"></script>
 
@@ -11,141 +11,170 @@
         body { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; text-align: center; margin: 0; padding: 20px; }
         .container { max-width: 900px; margin: 0 auto; }
         
-        /* Zone de Drop */
         .upload-zone { 
             border: 2px dashed #00e5ff; padding: 40px; margin: 20px 0;
             background: rgba(0,229,255,0.05); cursor: pointer; border-radius: 10px;
             transition: 0.3s;
         }
-        .upload-zone:hover { background: rgba(0,229,255,0.1); transform: scale(1.02); }
-        .upload-zone p { font-size: 18px; margin: 10px 0; }
-        .sub-text { font-size: 13px; color: #888; }
+        .upload-zone:hover { background: rgba(0,229,255,0.1); transform: scale(1.01); }
 
-        /* Contrôles */
-        #controls { display: none; background: #1e1e1e; padding: 20px; border-radius: 10px; border: 1px solid #333; margin-bottom: 20px; }
+        #controls { display: none; background: #1e1e1e; padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #333; }
         
         select { padding: 10px; background: #333; color: white; border: 1px solid #555; border-radius: 5px; font-size: 16px; margin-right: 10px; }
-        
-        button { cursor: pointer; padding: 10px 24px; border-radius: 5px; border: none; font-weight: bold; font-size: 16px; margin: 5px; transition: 0.2s; }
+        button { cursor: pointer; padding: 10px 24px; border-radius: 5px; border: none; font-weight: bold; font-size: 16px; margin: 5px; }
         .btn-primary { background: #00e5ff; color: black; }
-        .btn-primary:hover { background: white; }
+
+        /* Le conteneur de partition DOIT être blanc pour OSMD */
+        #score-container { background: white; border-radius: 5px; margin-top: 20px; min-height: 400px; overflow-x: auto; }
         
-        /* Partition */
-        #score-container { 
-            background: white; 
-            border-radius: 5px; 
-            margin-top: 20px; 
-            min-height: 400px;
-            overflow-x: auto; /* Pour scroller si c'est grand */
-        }
+        #loading-msg { display: none; color: #00e5ff; font-size: 18px; margin: 20px; }
+        
+        /* Debug console discrète */
+        #debug { font-size: 10px; color: #555; text-align: left; margin-top: 50px; white-space: pre-wrap; display: none; }
     </style>
 </head>
 <body>
 
     <div class="container">
         <header>
-            <h1>🎼 Transpositeur Pro</h1>
-            <p>Importez vos fichiers MusicXML (.mxl, .xml)</p>
+            <h1>🎼 Scanner Intégré</h1>
+            <p>Upload direct & Analyse IA (Format MusicXML)</p>
         </header>
 
-        <div class="upload-zone" id="drop-zone">
-            <p>📂 <strong>Cliquez</strong> ou Glissez un fichier MusicXML ici</p>
-            <p class="sub-text">Astuce : Utilisez une app comme "Sheet Music Scanner" pour créer ce fichier.</p>
-            <input type="file" id="file-input" accept=".xml,.musicxml,.mxl" style="display:none;">
+        <div class="upload-zone" onclick="document.getElementById('file-input').click()" id="drop-zone">
+            <p>📂 <strong>Cliquez ici</strong> pour scanner votre partition</p>
+            <input type="file" id="file-input" accept="image/*,.pdf" style="display:none;">
         </div>
 
+        <div id="loading-msg">⏳ Analyse en cours... L'IA rédige le fichier MusicXML...</div>
+
         <div id="controls">
-            <label style="color:#aaa; margin-right: 10px;">Transposer vers : </label>
+            <label>Transposer : </label>
             <select id="transposition">
-                <option value="0" selected>Original (Ut)</option>
-                <option value="2">Si bémol (Bb) - Trompette/Clarinette</option>
+                <option value="0" selected>Original</option>
+                <option value="2">Si bémol (Bb) - Trompette</option>
                 <option value="9">Mi bémol (Eb) - Saxo Alto</option>
                 <option value="7">Fa (F) - Cor</option>
-                <option value="-2">Ré (D)</option>
             </select>
             <button id="apply-btn" class="btn-primary">Appliquer</button>
-            <br><br>
-            <button onclick="window.location.reload()" style="background:#333; color:#aaa; padding: 5px 10px; font-size:12px;">🔄 Nouvelle partition</button>
+            <button onclick="window.location.reload()" style="background:#333; color:#aaa;">Recommencer</button>
         </div>
 
         <div id="score-container"></div>
     </div>
 
+    <div id="debug"></div>
+
     <script>
         const fileInput = document.getElementById('file-input');
-        const dropZone = document.getElementById('drop-zone');
+        const uploadZone = document.getElementById('drop-zone');
+        const loadingMsg = document.getElementById('loading-msg');
         const controls = document.getElementById('controls');
-        const scoreContainer = document.getElementById('score-container');
-        const transposeSelect = document.getElementById('transposition');
         const applyBtn = document.getElementById('apply-btn');
+        const debugBox = document.getElementById('debug');
 
-        let osmd = null; // L'instance du moteur d'affichage
-        let currentTranspose = 0;
+        let osmd = null;
+        let currentXmlData = ""; // On stocke le XML reçu
 
-        // --- 1. GESTION DU DROP & CLIC ---
-        dropZone.addEventListener('click', () => fileInput.click());
+        // --- OUTILS ---
+        function getBase64(file) {
+            return new Promise((r, j) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => r(reader.result.split(',')[1]);
+                reader.onerror = j;
+            });
+        }
         
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.style.borderColor = "#fff";
-        });
-        
-        dropZone.addEventListener('dragleave', (e) => {
-            e.preventDefault();
-            dropZone.style.borderColor = "#00e5ff";
+        // Compression simple
+        async function compressImage(file) {
+            const bitmap = await createImageBitmap(file);
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const scale = Math.min(1500 / bitmap.width, 1);
+            canvas.width = bitmap.width * scale;
+            canvas.height = bitmap.height * scale;
+            ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+            return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
+        }
+
+        // --- MAIN LOGIC ---
+        fileInput.addEventListener('change', async function() {
+            if (!fileInput.files.length) return;
+
+            uploadZone.style.display = 'none';
+            loadingMsg.style.display = 'block';
+
+            try {
+                // 1. Préparation Image
+                let file = fileInput.files[0];
+                let imgFile;
+                if (file.type.includes('pdf')) {
+                    alert("Pour l'instant, merci d'utiliser une image (JPG/PNG) pour la méthode XML.");
+                    window.location.reload();
+                    return;
+                } else {
+                    imgFile = await compressImage(file);
+                }
+                const base64 = await getBase64(imgFile);
+
+                // 2. Appel API
+                const res = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: base64, mimeType: 'image/jpeg' })
+                });
+
+                if (!res.ok) throw new Error("Erreur serveur");
+                const data = await res.json();
+                
+                if (data.error) throw new Error(data.error);
+                if (!data.musicXml) throw new Error("L'IA n'a pas renvoyé de XML valide.");
+
+                currentXmlData = data.musicXml;
+                
+                // Debug: voir le début du XML
+                debugBox.textContent = currentXmlData.substring(0, 500) + "...";
+
+                // 3. Affichage avec OSMD
+                loadingMsg.style.display = 'none';
+                controls.style.display = 'block';
+                
+                renderScore(currentXmlData);
+
+            } catch (e) {
+                loadingMsg.innerHTML = "❌ Erreur : " + e.message;
+                debugBox.style.display = 'block';
+                debugBox.textContent += "\nErreur: " + e.message;
+            }
         });
 
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.style.borderColor = "#00e5ff";
-            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
-        });
-
-        fileInput.addEventListener('change', () => {
-            if (fileInput.files.length) handleFile(fileInput.files[0]);
-        });
-
-        // --- 2. CHARGEMENT DU FICHIER XML ---
-        function handleFile(file) {
-            const reader = new FileReader();
-            
-            // OSMD peut lire directement le fichier texte ou binaire
-            reader.onload = function(e) {
-                const content = e.target.result;
-                loadScore(content, file.name);
-            };
-
-            // Si c'est un .mxl (compressé), OSMD le gère, mais FileReader doit lire en BinaryString ou ArrayBuffer
-            // Pour faire simple ici, on utilise le moteur interne d'OSMD pour charger.
-            
-            // Initialisation du moteur
+        // --- AFFICHAGE PARTITION ---
+        function renderScore(xmlData) {
             if (!osmd) {
                 osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay("score-container", {
                     autoResize: true,
                     backend: "svg",
+                    drawingParameters: "compacttight", // Style propre
                     drawTitle: true,
-                    drawingParameters: "compacttight" // Affichage propre
                 });
             }
-
-            osmd.load(file).then(() => {
+            
+            osmd.load(xmlData).then(() => {
                 osmd.render();
-                dropZone.style.display = 'none';
-                controls.style.display = 'block';
-            }).catch(err => {
-                alert("Erreur de lecture du fichier MusicXML : " + err);
+            }).catch(e => {
+                alert("Erreur lecture XML : L'IA a fait une erreur de syntaxe.\n" + e.message);
+                console.error(e);
             });
         }
 
-        // --- 3. TRANSPOSITION ---
+        // --- TRANSPOSITION ---
         applyBtn.addEventListener('click', () => {
             if (!osmd) return;
-
-            const targetKey = parseInt(transposeSelect.value);
+            const val = parseInt(document.getElementById('transposition').value);
             
-            // La transposition dans OSMD se fait par demi-tons
-            // On réinitialise d'abord
-            osmd.Sheet.Transpose = targetKey;
+            // Transposition interne OSMD
+            osmd.Sheet.Transpose = val;
             osmd.updateGraphic();
             osmd.render();
         });
