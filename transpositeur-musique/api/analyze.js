@@ -1,16 +1,12 @@
 // api/analyze.js
-// VERSION : GÉNÉRATEUR MUSICXML (ROBUSTE)
+// VERSION : SPEED MODE (ANTI-TIMEOUT)
 
 const https = require('https');
 
 export const config = {
     api: {
-        bodyParser: {
-            sizeLimit: '4mb',
-        },
+        bodyParser: { sizeLimit: '4mb' },
     },
-    // On augmente le temps max d'exécution pour laisser l'IA écrire le XML
-    maxDuration: 60, 
 };
 
 export default async function handler(req, res) {
@@ -21,37 +17,32 @@ export default async function handler(req, res) {
 
     try {
         const { image, mimeType } = req.body;
-        if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
+        if (!image) return res.status(400).json({ error: 'Image manquante' });
 
-        // 1. Détection du modèle (Flash est requis pour la vitesse, Pro est mieux pour la vision)
-        // On essaie de privilégier Flash pour éviter le Timeout Vercel, car XML est long à écrire
-        const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
-        const listResp = await fetch(listUrl);
-        const listData = await listResp.json();
-        
-        const models = listData.models || [];
-        let chosenModel = models.find(m => m.name.includes("flash") && !m.name.includes("2.0") && m.supportedGenerationMethods.includes("generateContent"));
-        if (!chosenModel) chosenModel = models[0]; // Fallback
+        // 1. On force le modèle FLASH (le plus rapide)
+        // On ne cherche même pas le Pro, car il est trop lent pour le timeout de 10s
+        const modelName = "gemini-1.5-flash";
 
-        const modelName = chosenModel.name.replace("models/", "");
-
-        // 2. Prompt MusicXML Strict
+        // 2. Prompt Optimisé pour la Vitesse
+        // On demande des clés courtes ("p", "l") pour réduire le temps d'écriture
         const promptText = `
-            Act as a professional MusicXML software. 
-            Transcribe the attached sheet music image into a valid MusicXML 3.1 file.
-
-            CRITICAL RULES:
-            1. **Whole File**: Return the COMPLETE XML structure starting with <?xml ...> and <score-partwise>.
-            2. **Measures**: Create a <measure> tag for every bar line in the image.
-            3. **Notes**: 
-               - Identify Pitch (Step/Octave) accurately.
-               - Identify Duration/Type (quarter, half, eighth) accurately.
-               - If you see a rest, use <rest/>.
-            4. **Attributes**:
-               - Set <divisions>4</divisions> at the start (Standard resolution).
-               - Detect Key Signature (<fifths>) and Time Signature (<beats>/<beat-type>).
+            OMR Task. Extract notes. Speed is critical.
             
-            Do not include markdown (\`\`\`xml). Just raw XML code.
+            Return JSON:
+            {
+                "time": "4/4",
+                "key": "C", 
+                "notes": [
+                    {"p": "C4", "l": "q"}, 
+                    {"p": "rest", "l": "h"}
+                ]
+            }
+
+            LEGEND:
+            "p": Pitch (e.g. C4, G#5) OR "rest".
+            "l": Length -> "w"(whole), "h"(half), "q"(quarter), "8"(eighth), "16"(sixteenth).
+            
+            Analyze the FIRST 4 measures only if the image is long.
         `;
 
         const requestBody = {
@@ -62,8 +53,8 @@ export default async function handler(req, res) {
                 ]
             }],
             generationConfig: { 
-                // On ne force pas JSON ici, on veut du texte XML brut
-                temperature: 0.2 // Très faible créativité pour respecter la syntaxe
+                response_mime_type: "application/json",
+                maxOutputTokens: 2000 // On limite pour éviter le timeout
             }
         };
 
@@ -83,33 +74,26 @@ export default async function handler(req, res) {
                 googleRes.on('data', (chunk) => { responseBody += chunk; });
                 googleRes.on('end', () => {
                     try {
-                        const parsedData = JSON.parse(responseBody);
-                        
-                        if (parsedData.error) {
-                            resolve({ statusCode: 500, body: JSON.stringify({ error: "Google Error: " + parsedData.error.message }) });
-                        } 
-                        else if (parsedData.candidates && parsedData.candidates[0].content) {
-                            let xmlText = parsedData.candidates[0].content.parts[0].text;
-                            
-                            // Nettoyage du Markdown si l'IA en met
-                            xmlText = xmlText.replace(/```xml/g, '').replace(/```/g, '').trim();
-
-                            // On renvoie le XML
-                            resolve({ statusCode: 200, body: JSON.stringify({ musicXml: xmlText }) });
+                        const parsed = JSON.parse(responseBody);
+                        if (parsed.error) {
+                            resolve({ statusCode: 500, body: JSON.stringify({ error: parsed.error.message }) });
+                        } else if (parsed.candidates && parsed.candidates[0].content) {
+                            const text = parsed.candidates[0].content.parts[0].text;
+                            resolve({ statusCode: 200, body: JSON.stringify({ musicData: JSON.parse(text) }) });
                         } else {
-                            resolve({ statusCode: 500, body: JSON.stringify({ error: "L'IA n'a rien généré." }) });
+                            resolve({ statusCode: 500, body: JSON.stringify({ error: "L'IA n'a rien vu." }) });
                         }
-                    } catch (e) { 
-                        resolve({ statusCode: 500, body: JSON.stringify({ error: "Réponse invalide." }) }); 
+                    } catch (e) {
+                        resolve({ statusCode: 500, body: JSON.stringify({ error: "Erreur lecture JSON Google" }) });
                     }
                 });
             });
-            req.on('error', (e) => resolve({ statusCode: 500, body: JSON.stringify({ error: "Erreur Co: " + e.message }) }));
+            req.on('error', (e) => resolve({ statusCode: 500, body: JSON.stringify({ error: e.message }) }));
             req.write(JSON.stringify(requestBody));
             req.end();
         });
 
     } catch (error) {
-        return res.status(500).json({ error: 'Erreur Serveur : ' + error.message });
+        return res.status(500).json({ error: 'Erreur Vercel: ' + error.message });
     }
 }
