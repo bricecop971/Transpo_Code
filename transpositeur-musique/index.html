@@ -1,67 +1,185 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
-    <title>Test Ultime</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transpositeur IA - Final</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
+
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 50px; background: #111; color: white; }
-        button { padding: 15px 30px; font-size: 18px; cursor: pointer; background: #00e5ff; border: none; border-radius: 5px; font-weight: bold; }
-        #result { margin-top: 30px; font-size: 20px; white-space: pre-wrap; background: #222; padding: 20px; border-radius: 10px; text-align: left; display: inline-block; min-width: 300px; }
+        body { background-color: #121212; color: #e0e0e0; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        
+        .upload-zone { border: 2px dashed #00e5ff; padding: 40px; margin: 20px 0; background: rgba(0,229,255,0.05); cursor: pointer; border-radius: 10px; }
+        .upload-zone:hover { background: rgba(0,229,255,0.1); }
+
+        #controls { display: none; background: #1e1e1e; padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #333; }
+        select { padding: 10px; background: #333; color: white; border: 1px solid #555; border-radius: 5px; margin-right: 10px; }
+        button { cursor: pointer; padding: 10px 24px; border-radius: 5px; border: none; font-weight: bold; margin: 5px; background: #00e5ff; color: black; }
+        
+        #paper { background: white; color: black; padding: 15px; border-radius: 5px; margin-top: 20px; min-height: 150px; overflow-x: auto; }
+        #paper svg { width: 100%; fill: black !important; }
+
+        #debug-console { margin-top: 30px; background: #000; color: #0f0; font-family: monospace; padding: 10px; text-align: left; font-size: 11px; display: none; white-space: pre-wrap; border: 1px solid #333; }
     </style>
 </head>
 <body>
-    <h1>📡 Test de Connexion Vercel</h1>
-    <p>Ce test vérifie si votre site peut parler à Google.</p>
-    
-    <button onclick="runTest()">LANCER LE TEST</button>
-    
-    <br>
-    <div id="result">En attente...</div>
+
+    <div class="container">
+        <h1>🎼 Transpositeur IA</h1>
+
+        <div class="upload-zone" onclick="document.getElementById('file-input').click()" id="drop-zone">
+            <p id="status-text">📂 Cliquez ici pour charger une partition</p>
+            <input type="file" id="file-input" accept="image/*,.pdf" style="display:none;">
+        </div>
+
+        <div id="controls">
+            <label>Transposer vers : </label>
+            <select id="transposition">
+                <option value="Eb">Saxophone Alto (Eb)</option>
+                <option value="Bb">Trompette (Bb)</option>
+                <option value="F">Cor (F)</option>
+                <option value="C" selected>Piano / Flûte (C)</option>
+            </select>
+            <button id="apply-btn">Appliquer</button>
+            <button onclick="window.location.reload()" style="background:#333; color:#aaa;">Recommencer</button>
+        </div>
+
+        <div id="paper"></div>
+        <div id="debug-console"></div>
+    </div>
 
     <script>
-        async function runTest() {
-            const out = document.getElementById('result');
-            out.innerText = "⏳ 1. Envoi de la demande au serveur Vercel...";
-            out.style.color = "yellow";
-            out.style.border = "1px solid yellow";
+        const fileInput = document.getElementById('file-input');
+        const statusText = document.getElementById('status-text');
+        const controls = document.getElementById('controls');
+        const debugBox = document.getElementById('debug-console');
+        const applyBtn = document.getElementById('apply-btn');
+        let currentData = null;
 
-            try {
-                // On met un timeout de 8 secondes pour ne pas rester bloqué
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 8000);
+        // --- OUTILS ---
+        function getBase64(file) {
+            return new Promise((r, j) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => r(reader.result.split(',')[1]);
+                reader.onerror = j;
+            });
+        }
+        async function compressImage(file) {
+            const bitmap = await createImageBitmap(file);
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const scale = Math.min(1500 / bitmap.width, 1);
+            canvas.width = bitmap.width * scale;
+            canvas.height = bitmap.height * scale;
+            ctx.fillStyle = "white"; ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+            return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
+        }
+        async function convertPdf(file) {
+            const ab = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument(ab).promise;
+            const page = await pdf.getPage(1);
+            const vp = page.getViewport({scale:1.5});
+            const cvs = document.createElement('canvas');
+            const ctx = cvs.getContext('2d');
+            cvs.width = vp.width; cvs.height = vp.height;
+            await page.render({canvasContext:ctx, viewport:vp}).promise;
+            return new Promise(r => cvs.toBlob(r, 'image/jpeg', 0.8));
+        }
 
-                const res = await fetch('/api/analyze', { 
-                    method: 'POST',
-                    signal: controller.signal // Lie le timeout
-                });
+        // --- CONSTRUCTEUR ABC ---
+        function generateABC(data) {
+            if (!data || !data.notes || data.notes.length === 0) return "";
+            
+            let abc = `X:1\nT:Partition IA\nM:${data.time || "4/4"}\nK:${data.key || "C"}\nL:1/4\n%%staffwidth 800\n`;
+            let [beats, val] = (data.time || "4/4").split('/').map(Number);
+            let limit = beats * (4/val);
+            let current = 0;
+
+            data.notes.forEach(n => {
+                let note = "z"; // Silence par défaut
+                let d = 1;
+
+                // Pitch
+                if (n.p && n.p !== "rest") {
+                    let p = n.p.toUpperCase().replace(/[0-9]/g, '');
+                    let o = parseInt(n.p.replace(/[^0-9]/g, '')) || 4;
+                    let char = p;
+                    if (o <= 3) char += ",";
+                    if (o === 5) char = char.toLowerCase();
+                    if (o >= 6) char = char.toLowerCase() + "'";
+                    if (n.p.includes("#")) char = "^" + char.replace("#","");
+                    if (n.p.includes("b")) char = "_" + char.replace("b","");
+                    note = char;
+                }
+
+                // Durée
+                let l = n.l || "q";
+                if (l === "w") { note += "4"; d=4; }
+                else if (l === "h") { note += "2"; d=2; }
+                else if (l === "8") { note += "/2"; d=0.5; }
+                else if (l === "16") { note += "/4"; d=0.25; }
                 
-                clearTimeout(timeoutId); // On arrête le chrono
+                abc += note + " ";
+                current += d;
+                if (current >= limit - 0.01) { abc += "| "; current = 0; }
+            });
+            abc += "|]";
+            return abc;
+        }
 
-                out.innerText += "\n⏳ 2. Réponse reçue ! Lecture...";
+        // --- LOGIQUE ---
+        fileInput.addEventListener('change', async () => {
+            if (!fileInput.files.length) return;
+            statusText.innerText = "⏳ Analyse en cours... (Ne fermez pas)";
+            
+            try {
+                let file = fileInput.files[0];
+                let img = file.type.includes('pdf') ? await convertPdf(file) : await compressImage(file);
+                let b64 = await getBase64(img);
 
-                if (res.status === 404) {
-                    throw new Error("ERREUR 404 : Le fichier api/analyze.js n'existe pas ou est mal placé sur GitHub.");
-                }
+                const res = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({image: b64})
+                });
 
-                const data = await res.json();
+                const json = await res.json();
+                
+                debugBox.style.display = 'block';
+                debugBox.innerText = "RÉPONSE IA BRUTE :\n" + JSON.stringify(json, null, 2);
 
-                if (data.error) {
-                    throw new Error("ERREUR DU SERVEUR : " + data.error);
-                }
-
-                out.innerText = "✅ SUCCÈS TOTAL !\n\nMessage du serveur : " + data.message + "\nRéponse de l'IA : " + data.ia_response;
-                out.style.color = "#00ff00";
-                out.style.border = "2px solid #00ff00";
+                if (json.error) throw new Error(json.error);
+                
+                currentData = json.musicData;
+                document.getElementById('drop-zone').style.display = 'none';
+                controls.style.display = 'block';
+                
+                // Auto-clic
+                applyBtn.click();
 
             } catch (e) {
-                let msg = e.message;
-                if (e.name === 'AbortError') {
-                    msg = "TIMEOUT : Le serveur Vercel a mis trop de temps à répondre (> 8s).\nCela veut dire que la clé API est peut-être invalide ou que Google bloque la requête.";
-                }
-                out.innerText = "❌ ÉCHEC : " + msg;
-                out.style.color = "#ff5555";
-                out.style.border = "2px solid red";
+                statusText.innerText = "❌ Erreur";
+                alert("Erreur: " + e.message);
             }
-        }
+        });
+
+        applyBtn.addEventListener('click', () => {
+            if (!currentData) return;
+            const key = document.getElementById('transposition').value;
+            let vt = 0;
+            if (key === "Bb") vt = 2;
+            if (key === "Eb") vt = 9;
+            if (key === "F") vt = 7;
+
+            const abc = generateABC(currentData);
+            ABCJS.renderAbc("paper", abc, { visualTranspose: vt, responsive: "resize" });
+        });
     </script>
 </body>
 </html>
