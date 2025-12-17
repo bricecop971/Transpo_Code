@@ -1,43 +1,65 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Test Diagnostic</title>
+    <title>Test Ultime</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 50px; background: #222; color: white; }
-        button { padding: 20px; font-size: 20px; cursor: pointer; background: #00e5ff; border: none; }
-        #result { margin-top: 20px; font-size: 24px; font-weight: bold; color: yellow; white-space: pre-wrap;}
+        body { font-family: sans-serif; text-align: center; padding: 50px; background: #111; color: white; }
+        button { padding: 15px 30px; font-size: 18px; cursor: pointer; background: #00e5ff; border: none; border-radius: 5px; font-weight: bold; }
+        #result { margin-top: 30px; font-size: 20px; white-space: pre-wrap; background: #222; padding: 20px; border-radius: 10px; text-align: left; display: inline-block; min-width: 300px; }
     </style>
 </head>
 <body>
-    <h1>🛠️ Test de Connexion Vercel <-> Google</h1>
-    <button onclick="testConnection()">Lancer le Test</button>
+    <h1>📡 Test de Connexion Vercel</h1>
+    <p>Ce test vérifie si votre site peut parler à Google.</p>
+    
+    <button onclick="runTest()">LANCER LE TEST</button>
+    
+    <br>
     <div id="result">En attente...</div>
 
     <script>
-        async function testConnection() {
-            const resDiv = document.getElementById('result');
-            resDiv.innerText = "⏳ Connexion en cours...";
-            resDiv.style.color = "yellow";
+        async function runTest() {
+            const out = document.getElementById('result');
+            out.innerText = "⏳ 1. Envoi de la demande au serveur Vercel...";
+            out.style.color = "yellow";
+            out.style.border = "1px solid yellow";
 
             try {
-                const response = await fetch('/api/analyze', { method: 'POST' }); // POST même sans body pour ce test
+                // On met un timeout de 8 secondes pour ne pas rester bloqué
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+                const res = await fetch('/api/analyze', { 
+                    method: 'POST',
+                    signal: controller.signal // Lie le timeout
+                });
                 
-                if (response.status === 404) {
-                    throw new Error("ERREUR 404 : Le fichier api/analyze.js est introuvable sur le serveur.");
+                clearTimeout(timeoutId); // On arrête le chrono
+
+                out.innerText += "\n⏳ 2. Réponse reçue ! Lecture...";
+
+                if (res.status === 404) {
+                    throw new Error("ERREUR 404 : Le fichier api/analyze.js n'existe pas ou est mal placé sur GitHub.");
                 }
 
-                const data = await response.json();
+                const data = await res.json();
 
                 if (data.error) {
-                    throw new Error(data.error);
+                    throw new Error("ERREUR DU SERVEUR : " + data.error);
                 }
 
-                resDiv.innerText = "✅ SUCCÈS : " + data.message;
-                resDiv.style.color = "#00ff00";
+                out.innerText = "✅ SUCCÈS TOTAL !\n\nMessage du serveur : " + data.message + "\nRéponse de l'IA : " + data.ia_response;
+                out.style.color = "#00ff00";
+                out.style.border = "2px solid #00ff00";
 
             } catch (e) {
-                resDiv.innerText = "❌ ÉCHEC : " + e.message;
-                resDiv.style.color = "red";
+                let msg = e.message;
+                if (e.name === 'AbortError') {
+                    msg = "TIMEOUT : Le serveur Vercel a mis trop de temps à répondre (> 8s).\nCela veut dire que la clé API est peut-être invalide ou que Google bloque la requête.";
+                }
+                out.innerText = "❌ ÉCHEC : " + msg;
+                out.style.color = "#ff5555";
+                out.style.border = "2px solid red";
             }
         }
     </script>
