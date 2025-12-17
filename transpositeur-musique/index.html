@@ -3,182 +3,194 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner Intégré MusicXML</title>
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/opensheetmusicdisplay/1.8.8/opensheetmusicdisplay.min.js"></script>
+    <title>Transpositeur Rapide</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
 
     <style>
-        body { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; text-align: center; margin: 0; padding: 20px; }
-        .container { max-width: 900px; margin: 0 auto; }
-        
-        .upload-zone { 
-            border: 2px dashed #00e5ff; padding: 40px; margin: 20px 0;
-            background: rgba(0,229,255,0.05); cursor: pointer; border-radius: 10px;
-            transition: 0.3s;
-        }
-        .upload-zone:hover { background: rgba(0,229,255,0.1); transform: scale(1.01); }
-
-        #controls { display: none; background: #1e1e1e; padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #333; }
-        
-        select { padding: 10px; background: #333; color: white; border: 1px solid #555; border-radius: 5px; font-size: 16px; margin-right: 10px; }
-        button { cursor: pointer; padding: 10px 24px; border-radius: 5px; border: none; font-weight: bold; font-size: 16px; margin: 5px; }
-        .btn-primary { background: #00e5ff; color: black; }
-
-        /* Le conteneur de partition DOIT être blanc pour OSMD */
-        #score-container { background: white; border-radius: 5px; margin-top: 20px; min-height: 400px; overflow-x: auto; }
-        
-        #loading-msg { display: none; color: #00e5ff; font-size: 18px; margin: 20px; }
-        
-        /* Debug console discrète */
-        #debug { font-size: 10px; color: #555; text-align: left; margin-top: 50px; white-space: pre-wrap; display: none; }
+        body { background: #121212; color: white; font-family: sans-serif; text-align: center; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .upload-zone { border: 2px dashed #00e5ff; padding: 30px; margin: 20px 0; cursor: pointer; border-radius: 10px; background: rgba(0,229,255,0.05); }
+        #paper { background: white; color: black; padding: 10px; border-radius: 5px; margin-top: 20px; min-height: 150px; overflow-x: auto; }
+        #paper svg { width: 100%; fill: black !important; }
+        button { padding: 10px 20px; background: #00e5ff; border: none; font-weight: bold; cursor: pointer; margin: 5px; border-radius: 4px; }
+        #debug { color: #ff5555; font-size: 11px; margin-top: 20px; display: none; text-align: left; background: #000; padding: 10px; white-space: pre-wrap; }
+        #controls { display: none; background: #222; padding: 15px; border-radius: 8px; }
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <header>
-            <h1>🎼 Scanner Intégré</h1>
-            <p>Upload direct & Analyse IA (Format MusicXML)</p>
-        </header>
-
-        <div class="upload-zone" onclick="document.getElementById('file-input').click()" id="drop-zone">
-            <p>📂 <strong>Cliquez ici</strong> pour scanner votre partition</p>
-            <input type="file" id="file-input" accept="image/*,.pdf" style="display:none;">
-        </div>
-
-        <div id="loading-msg">⏳ Analyse en cours... L'IA rédige le fichier MusicXML...</div>
-
-        <div id="controls">
-            <label>Transposer : </label>
-            <select id="transposition">
-                <option value="0" selected>Original</option>
-                <option value="2">Si bémol (Bb) - Trompette</option>
-                <option value="9">Mi bémol (Eb) - Saxo Alto</option>
-                <option value="7">Fa (F) - Cor</option>
-            </select>
-            <button id="apply-btn" class="btn-primary">Appliquer</button>
-            <button onclick="window.location.reload()" style="background:#333; color:#aaa;">Recommencer</button>
-        </div>
-
-        <div id="score-container"></div>
+<div class="container">
+    <h1>🎼 Transpositeur Flash</h1>
+    
+    <div class="upload-zone" onclick="document.getElementById('file-input').click()">
+        <p id="status">📂 Cliquez pour charger une image</p>
+        <input type="file" id="file-input" accept="image/*,.pdf" style="display:none;">
     </div>
 
+    <div id="controls">
+        <label>Transposer vers : </label>
+        <select id="transposition" style="padding: 8px;">
+            <option value="Eb">Saxophone Alto (Eb)</option>
+            <option value="Bb">Trompette (Bb)</option>
+            <option value="F">Cor (F)</option>
+            <option value="C" selected>Piano (C)</option>
+        </select>
+        <button id="btn-transpose">Appliquer</button>
+    </div>
+
+    <div id="paper"></div>
     <div id="debug"></div>
+</div>
 
-    <script>
-        const fileInput = document.getElementById('file-input');
-        const uploadZone = document.getElementById('drop-zone');
-        const loadingMsg = document.getElementById('loading-msg');
-        const controls = document.getElementById('controls');
-        const applyBtn = document.getElementById('apply-btn');
-        const debugBox = document.getElementById('debug');
+<script>
+    const fileInput = document.getElementById('file-input');
+    const status = document.getElementById('status');
+    const controls = document.getElementById('controls');
+    const debug = document.getElementById('debug');
+    let currentData = null;
 
-        let osmd = null;
-        let currentXmlData = ""; // On stocke le XML reçu
+    // --- OUTILS IMAGE ---
+    function getBase64(file) {
+        return new Promise((r, j) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => r(reader.result.split(',')[1]);
+            reader.onerror = j;
+        });
+    }
 
-        // --- OUTILS ---
-        function getBase64(file) {
-            return new Promise((r, j) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => r(reader.result.split(',')[1]);
-                reader.onerror = j;
-            });
+    async function compressImage(file) {
+        const bitmap = await createImageBitmap(file);
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        // On réduit à 1500px pour aller vite
+        const scale = Math.min(1500 / bitmap.width, 1);
+        canvas.width = bitmap.width * scale;
+        canvas.height = bitmap.height * scale;
+        ctx.fillStyle = "white"; 
+        ctx.fillRect(0,0,canvas.width, canvas.height);
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.7));
+    }
+
+    async function convertPdf(file) {
+        const ab = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument(ab).promise;
+        const page = await pdf.getPage(1);
+        const vp = page.getViewport({scale:1.5});
+        const cvs = document.createElement('canvas');
+        const ctx = cvs.getContext('2d');
+        cvs.width = vp.width; cvs.height = vp.height;
+        await page.render({canvasContext:ctx, viewport:vp}).promise;
+        return new Promise(r => cvs.toBlob(r, 'image/jpeg', 0.7));
+    }
+
+    // --- MOTEUR ABC (ROBUSTE) ---
+    function generateABC(data) {
+        // Sécurité : si pas de notes, on met une gamme par défaut
+        if (!data || !data.notes || data.notes.length === 0) {
+            console.warn("Pas de notes détectées, utilisation fallback");
+            return `X:1\nT:Erreur Analyse\nM:4/4\nK:C\nL:1/4\n"IA n'a rien vu" C D E F | G A B c |`;
         }
+
+        let abc = `X:1\nT:Partition Scannée\nM:${data.time || "4/4"}\nK:${data.key || "C"}\nL:1/4\n%%staffwidth 800\n`;
         
-        // Compression simple
-        async function compressImage(file) {
-            const bitmap = await createImageBitmap(file);
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            const scale = Math.min(1500 / bitmap.width, 1);
-            canvas.width = bitmap.width * scale;
-            canvas.height = bitmap.height * scale;
-            ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-            return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
-        }
+        // Calcul des mesures pour les barres
+        let [beats, val] = (data.time || "4/4").split('/').map(Number);
+        let limit = beats * (4/val);
+        let current = 0;
 
-        // --- MAIN LOGIC ---
-        fileInput.addEventListener('change', async function() {
-            if (!fileInput.files.length) return;
+        data.notes.forEach(n => {
+            let note = "";
+            let d = 1;
 
-            uploadZone.style.display = 'none';
-            loadingMsg.style.display = 'block';
+            // PITCH
+            if (!n.p || n.p === "rest") {
+                note = "z";
+            } else {
+                let p = n.p.toUpperCase().replace(/[0-9]/g, '');
+                let o = parseInt(n.p.replace(/[^0-9]/g, '')) || 4;
+                let char = p;
+                if (o <= 3) char += ",";
+                if (o === 5) char = char.toLowerCase();
+                if (o >= 6) char = char.toLowerCase() + "'";
+                if (n.p.includes("#")) char = "^" + char.replace("#","");
+                if (n.p.includes("b")) char = "_" + char.replace("b","");
+                note = char;
+            }
 
-            try {
-                // 1. Préparation Image
-                let file = fileInput.files[0];
-                let imgFile;
-                if (file.type.includes('pdf')) {
-                    alert("Pour l'instant, merci d'utiliser une image (JPG/PNG) pour la méthode XML.");
-                    window.location.reload();
-                    return;
-                } else {
-                    imgFile = await compressImage(file);
-                }
-                const base64 = await getBase64(imgFile);
-
-                // 2. Appel API
-                const res = await fetch('/api/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: base64, mimeType: 'image/jpeg' })
-                });
-
-                if (!res.ok) throw new Error("Erreur serveur");
-                const data = await res.json();
-                
-                if (data.error) throw new Error(data.error);
-                if (!data.musicXml) throw new Error("L'IA n'a pas renvoyé de XML valide.");
-
-                currentXmlData = data.musicXml;
-                
-                // Debug: voir le début du XML
-                debugBox.textContent = currentXmlData.substring(0, 500) + "...";
-
-                // 3. Affichage avec OSMD
-                loadingMsg.style.display = 'none';
-                controls.style.display = 'block';
-                
-                renderScore(currentXmlData);
-
-            } catch (e) {
-                loadingMsg.innerHTML = "❌ Erreur : " + e.message;
-                debugBox.style.display = 'block';
-                debugBox.textContent += "\nErreur: " + e.message;
+            // DURATION
+            let l = n.l || "q";
+            if (l === "w") { note += "4"; d=4; }
+            else if (l === "h") { note += "2"; d=2; }
+            else if (l === "8") { note += "/2"; d=0.5; }
+            else if (l === "16") { note += "/4"; d=0.25; }
+            
+            abc += note + " ";
+            current += d;
+            
+            if (current >= limit - 0.01) {
+                abc += "| ";
+                current = 0;
             }
         });
+        
+        abc += "|]";
+        return abc;
+    }
 
-        // --- AFFICHAGE PARTITION ---
-        function renderScore(xmlData) {
-            if (!osmd) {
-                osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay("score-container", {
-                    autoResize: true,
-                    backend: "svg",
-                    drawingParameters: "compacttight", // Style propre
-                    drawTitle: true,
-                });
-            }
-            
-            osmd.load(xmlData).then(() => {
-                osmd.render();
-            }).catch(e => {
-                alert("Erreur lecture XML : L'IA a fait une erreur de syntaxe.\n" + e.message);
-                console.error(e);
+    // --- EVENTS ---
+    fileInput.addEventListener('change', async () => {
+        if (!fileInput.files.length) return;
+        status.innerText = "⏳ Analyse Rapide...";
+        debug.style.display = 'none';
+
+        try {
+            let file = fileInput.files[0];
+            let img = file.type === 'application/pdf' ? await convertPdf(file) : await compressImage(file);
+            let b64 = await getBase64(img);
+
+            const res = await fetch('/api/analyze', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({image: b64})
             });
-        }
 
-        // --- TRANSPOSITION ---
-        applyBtn.addEventListener('click', () => {
-            if (!osmd) return;
-            const val = parseInt(document.getElementById('transposition').value);
+            if (!res.ok) throw new Error("Erreur HTTP " + res.status);
+            const json = await res.json();
+            if (json.error) throw new Error(json.error);
+
+            currentData = json.musicData;
             
-            // Transposition interne OSMD
-            osmd.Sheet.Transpose = val;
-            osmd.updateGraphic();
-            osmd.render();
-        });
+            // DEBUG : Afficher ce que l'IA a vu
+            debug.style.display = 'block';
+            debug.innerText = "IA a vu : " + JSON.stringify(currentData);
 
-    </script>
+            document.querySelector('.upload-zone').style.display = 'none';
+            controls.style.display = 'block';
+            document.getElementById('btn-transpose').click();
+
+        } catch (e) {
+            status.innerText = "❌ Erreur : " + e.message;
+            debug.style.display = 'block';
+            debug.innerText = e.message;
+        }
+    });
+
+    document.getElementById('btn-transpose').addEventListener('click', () => {
+        if (!currentData) return;
+        
+        const key = document.getElementById('transposition').value;
+        let visualT = 0;
+        if (key === "Bb") visualT = 2;
+        if (key === "Eb") visualT = 9;
+        if (key === "F") visualT = 7;
+
+        const abc = generateABC(currentData);
+        ABCJS.renderAbc("paper", abc, { visualTranspose: visualT, responsive: "resize" });
+    });
+</script>
 </body>
 </html>
