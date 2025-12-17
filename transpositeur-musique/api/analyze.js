@@ -1,3 +1,6 @@
+// api/analyze.js
+// VERSION : GÉNÉRATEUR MUSICXML (ROBUSTE)
+
 const https = require('https');
 
 export const config = {
@@ -6,58 +9,49 @@ export const config = {
             sizeLimit: '4mb',
         },
     },
+    // On augmente le temps max d'exécution pour laisser l'IA écrire le XML
+    maxDuration: 60, 
 };
 
 export default async function handler(req, res) {
-    // 1. Vérification méthode
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: 'Clé API manquante sur Vercel' });
+    if (!apiKey) return res.status(500).json({ error: 'Clé API manquante' });
 
     try {
         const { image, mimeType } = req.body;
         if (!image) return res.status(400).json({ error: 'Aucune image reçue' });
 
-        // 2. Détection automatique du modèle
+        // 1. Détection du modèle (Flash est requis pour la vitesse, Pro est mieux pour la vision)
+        // On essaie de privilégier Flash pour éviter le Timeout Vercel, car XML est long à écrire
         const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
         const listResp = await fetch(listUrl);
         const listData = await listResp.json();
         
         const models = listData.models || [];
-        // On cherche Flash ou Pro (hors 2.0 exp qui a des quotas faibles)
         let chosenModel = models.find(m => m.name.includes("flash") && !m.name.includes("2.0") && m.supportedGenerationMethods.includes("generateContent"));
-        if (!chosenModel) chosenModel = models.find(m => m.name.includes("pro") && !m.name.includes("2.0"));
-        if (!chosenModel) chosenModel = models[0];
-
-        if (!chosenModel) return res.status(500).json({ error: "Aucun modèle IA disponible." });
+        if (!chosenModel) chosenModel = models[0]; // Fallback
 
         const modelName = chosenModel.name.replace("models/", "");
 
-        // 3. Prompt "Vision Optique" (Retourne du JSON strict)
+        // 2. Prompt MusicXML Strict
         const promptText = `
-            Act as an Optical Music Recognition (OMR) engine.
-            Task: Extract visual data about notes from the image.
+            Act as a professional MusicXML software. 
+            Transcribe the attached sheet music image into a valid MusicXML 3.1 file.
 
-            RETURN JSON ONLY using this schema:
-            {
-                "attributes": {
-                    "keySignature": "C", 
-                    "timeSignature": "4/4"
-                },
-                "notes": [
-                    {
-                        "pitch": "C4",  // Scientific pitch (C4, D#5, etc.) OR "rest"
-                        "visualType": "quarter" // "whole", "half", "quarter", "eighth", "sixteenth"
-                    }
-                ]
-            }
+            CRITICAL RULES:
+            1. **Whole File**: Return the COMPLETE XML structure starting with <?xml ...> and <score-partwise>.
+            2. **Measures**: Create a <measure> tag for every bar line in the image.
+            3. **Notes**: 
+               - Identify Pitch (Step/Octave) accurately.
+               - Identify Duration/Type (quarter, half, eighth) accurately.
+               - If you see a rest, use <rest/>.
+            4. **Attributes**:
+               - Set <divisions>4</divisions> at the start (Standard resolution).
+               - Detect Key Signature (<fifths>) and Time Signature (<beats>/<beat-type>).
             
-            RULES:
-            - "rest" means a silence/pause.
-            - "half" = Hollow head (vide) with stem.
-            - "quarter" = Solid head (pleine) with stem.
-            - "eighth" = Solid head with flag/beam.
+            Do not include markdown (\`\`\`xml). Just raw XML code.
         `;
 
         const requestBody = {
@@ -67,13 +61,10 @@ export default async function handler(req, res) {
                     { inline_data: { mime_type: mimeType || 'image/jpeg', data: image } }
                 ]
             }],
-            generationConfig: { response_mime_type: "application/json" },
-            safetySettings: [
-                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-            ]
+            generationConfig: { 
+                // On ne force pas JSON ici, on veut du texte XML brut
+                temperature: 0.2 // Très faible créativité pour respecter la syntaxe
+            }
         };
 
         const options = {
@@ -86,7 +77,6 @@ export default async function handler(req, res) {
             }
         };
 
-        // Utilisation de https natif pour éviter les erreurs de version de Node
         return new Promise((resolve, reject) => {
             const req = https.request(options, (googleRes) => {
                 let responseBody = '';
@@ -99,14 +89,18 @@ export default async function handler(req, res) {
                             resolve({ statusCode: 500, body: JSON.stringify({ error: "Google Error: " + parsedData.error.message }) });
                         } 
                         else if (parsedData.candidates && parsedData.candidates[0].content) {
-                            const jsonText = parsedData.candidates[0].content.parts[0].text;
-                            // On renvoie le JSON pur
-                            resolve({ statusCode: 200, body: JSON.stringify({ musicData: JSON.parse(jsonText) }) });
+                            let xmlText = parsedData.candidates[0].content.parts[0].text;
+                            
+                            // Nettoyage du Markdown si l'IA en met
+                            xmlText = xmlText.replace(/```xml/g, '').replace(/```/g, '').trim();
+
+                            // On renvoie le XML
+                            resolve({ statusCode: 200, body: JSON.stringify({ musicXml: xmlText }) });
                         } else {
-                            resolve({ statusCode: 500, body: JSON.stringify({ error: "L'IA n'a rien trouvé." }) });
+                            resolve({ statusCode: 500, body: JSON.stringify({ error: "L'IA n'a rien généré." }) });
                         }
                     } catch (e) { 
-                        resolve({ statusCode: 500, body: JSON.stringify({ error: "Réponse illisible: " + responseBody }) }); 
+                        resolve({ statusCode: 500, body: JSON.stringify({ error: "Réponse invalide." }) }); 
                     }
                 });
             });
@@ -116,6 +110,6 @@ export default async function handler(req, res) {
         });
 
     } catch (error) {
-        return res.status(500).json({ error: 'Erreur Serveur Vercel : ' + error.message });
+        return res.status(500).json({ error: 'Erreur Serveur : ' + error.message });
     }
 }
